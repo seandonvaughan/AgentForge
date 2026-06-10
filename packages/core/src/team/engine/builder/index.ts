@@ -231,7 +231,8 @@ function teamPlanToManifest(plan: TeamPlan, projectRoot: string): TeamManifest {
     utility: [],
   };
 
-  const modelRouting: { opus: string[]; sonnet: string[]; haiku: string[] } = {
+  const modelRouting: { fable: string[]; opus: string[]; sonnet: string[]; haiku: string[] } = {
+    fable: [],
     opus: [],
     sonnet: [],
     haiku: [],
@@ -426,7 +427,12 @@ export async function forgeTeam(
   const projectHash = computeProjectHash(scan);
 
   // Build final routing and delegation from the customized agents
-  const modelRouting = { opus: [] as string[], sonnet: [] as string[], haiku: [] as string[] };
+  const modelRouting = {
+    fable: [] as string[],
+    opus: [] as string[],
+    sonnet: [] as string[],
+    haiku: [] as string[],
+  };
   for (const [name, template] of customizedAgents) {
     modelRouting[template.model].push(name);
   }

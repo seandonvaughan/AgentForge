@@ -46,6 +46,8 @@ import { recordSelfEval } from '../self-eval/recorder.js';
 import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 // Phase 0 — lesson-attribution instrumentation.
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
+import { appendAgentMemory, extractLearnedNotes } from '../../memory/agent-memory.js';
+import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-retrieval.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
@@ -133,9 +135,14 @@ async function scoreStep(input: ScoreStepInput): Promise<StepScore> {
     phase: 'execute',
     item_id: input.itemId,
     agent_id: input.agentId,
-    model: (['opus', 'sonnet', 'haiku'] as const).includes(input.model as 'opus' | 'sonnet' | 'haiku')
-      ? (input.model as 'opus' | 'sonnet' | 'haiku')
-      : 'sonnet',
+    // Step-score learning is keyed to the three bulk tiers; record a fable
+    // execution as opus (nearest capability) so its outcomes don't skew the
+    // sonnet stats the adaptive router learns from.
+    model: input.model === 'fable'
+      ? 'opus'
+      : (['opus', 'sonnet', 'haiku'] as const).includes(input.model as 'opus' | 'sonnet' | 'haiku')
+        ? (input.model as 'opus' | 'sonnet' | 'haiku')
+        : 'sonnet',
     capability_tags: [],
     skill_ids: [],
     output_schema_id: input.validatedOutput?.schemaName ?? null,
@@ -408,11 +415,21 @@ interface SprintFile {
 
 interface ItemResult {
   itemId: string;
-  status: 'completed' | 'failed';
+  status: 'completed' | 'failed' | 'running' | 'blocked';
+  /** W5 — deterministic failure taxonomy; present on failed/blocked results. */
+  failureClass?: string;
   costUsd: number;
   durationMs: number;
   response: string;
   attempts: number;
+  /** Assignee that ran (or is running) the item. */
+  agentId?: string;
+  /**
+   * ISO timestamp of dispatch start. Set when the item enters `running` and
+   * preserved on the terminal result so the dashboard can render live elapsed
+   * time from the incremental execute.json snapshot.
+   */
+  startedAt?: string;
   model?: string;
   effort?: string;
   resolvedModelId?: string;
@@ -877,6 +894,12 @@ export interface ExecutePhaseOptions {
    */
   childVerifyExcludeTestFiles?: string[];
   /**
+   * W5 — when true, a failed child's worktree HEAD is force-pushed to origin
+   * as diagnostic/<cycleId>-<itemId> before release (config:
+   * git.includeDiagnosticBranchOnFailure).
+   */
+  includeDiagnosticBranchOnFailure?: boolean;
+  /**
    * P0.5 — Escape hatch: when true the per-child verify bar is skipped entirely
    * even in epic-mode. Used by tests that exercise unrelated epic behaviour and
    * don't want a real typecheck/vitest subprocess to run. The hook is ALSO
@@ -1198,8 +1221,24 @@ export async function runExecutePhase(
 
   const dispatchItem = async (item: SprintItem): Promise<ItemResult> => {
     const itemStartedAt = Date.now();
+    const itemStartedAtIso = new Date(itemStartedAt).toISOString();
     let lastError: string | undefined;
     let attempts = 0;
+    // Live-progress: register a `running` entry immediately and snapshot, so
+    // the dashboard's incremental execute.json shows WHO is running WHAT and
+    // since WHEN while the (long) item executes. Terminal results overwrite
+    // this entry, preserving startedAt.
+    liveResults.set(item.id, {
+      itemId: item.id,
+      status: 'running',
+      costUsd: 0,
+      durationMs: 0,
+      response: '',
+      attempts: 0,
+      agentId: item.assignee,
+      startedAt: itemStartedAtIso,
+    } as ItemResult);
+    snapshotExecuteProgress();
     // Mark the item as in_progress and persist immediately so the dashboard
     // Items kanban shows it moving from Planned → In Progress the moment
     // the agent starts. Without this, items jump straight from planned to
@@ -1233,6 +1272,40 @@ export async function runExecutePhase(
           branch: worktreeHandle.branch,
         });
       } catch (allocErr) {
+        // W4 — allocation pressure relief: run one worktree-GC pass (prunes
+        // aged/over-budget worktrees) and retry the allocation ONCE before
+        // falling back. Pool exhaustion mid-phase was previously terminal for
+        // the item even when stale worktrees were sitting on disk.
+        let retried: ExecuteWorktreeHandle | undefined;
+        try {
+          // The phase receives a structural WorktreePoolLike; GC needs the
+          // real pool's listActive/release surface — only attempt when present.
+          const gcPool = worktreePool as unknown as { listActive?: unknown };
+          if (typeof gcPool.listActive === 'function') {
+            const { WorktreeGc } = await import('../../runtime/worktree-gc.js');
+            await new WorktreeGc({
+              pool: worktreePool as unknown as ConstructorParameters<typeof WorktreeGc>[0]['pool'],
+              projectRoot: ctx.projectRoot,
+            }).run();
+            retried = await allocateWorktreeForItem(worktreePool, ctx, item, integrationBranch);
+          }
+        } catch { /* fall through to the existing failure handling */ }
+        if (retried !== undefined) {
+          worktreeHandle = retried;
+          itemBranchById.set(item.id, worktreeHandle.branch);
+          branchOwnerById.set(worktreeHandle.branch, item.id);
+          ctx.bus.publish('execute.worktree.allocated', {
+            sprintId: ctx.sprintId,
+            phase,
+            cycleId: ctx.cycleId,
+            itemId: item.id,
+            agentId: item.assignee,
+            worktreeId: worktreeHandle.id,
+            worktreePath: worktreeHandle.path,
+            branch: worktreeHandle.branch,
+            afterGc: true,
+          });
+        } else {
         // Allocation failure is non-fatal: fall back to main-tree execution.
         // This prevents a pool exhaustion or git error from blocking the item.
         ctx.bus.publish('execute.worktree.alloc-failed', {
@@ -1248,6 +1321,7 @@ export async function runExecutePhase(
           ? `Rejected branch checkout failed for ${retryRejectedBranch}: ${rawError}`
           : rawError;
         worktreeHandle = undefined;
+        }
       }
     } else if (requireWorktrees && itemRequiresWorktree) {
       worktreeAllocationError =
@@ -1268,7 +1342,9 @@ export async function runExecutePhase(
           error:
             `Worktree allocation failed for ${item.assignee} on ${item.id}: ` +
             worktreeAllocationError,
+          failureClass: 'worktree' as const,
           agentId: item.assignee,
+          startedAt: itemStartedAtIso,
         };
         liveResults.set(item.id, failedResult as ItemResult);
         return failedResult;
@@ -1306,7 +1382,7 @@ export async function runExecutePhase(
       for (let attempt = 0; attempt <= maxItemRetries; attempt++) {
         attempts = attempt + 1;
         const runtimeCwd = worktreeHandle?.path ?? ctx.projectRoot;
-        const task = buildItemPrompt(
+        let task = buildItemPrompt(
           item,
           runtimeCwd,
           attempt,
@@ -1315,6 +1391,16 @@ export async function runExecutePhase(
           selfEvalDisabled,
           ctx.gateRetry,
         );
+        // W1 — splice task-relevant knowledge-base notes (accumulated review/
+        // audit/learn findings about THIS repo) into the prompt. Keyword
+        // retrieval, deterministic, empty on fresh repos. Read from
+        // ctx.projectRoot: worktrees do not carry .agentforge/knowledge.
+        try {
+          const kbBlock = buildKbPromptBlock(
+            searchKnowledgeNotes(ctx.projectRoot, `${item.title} ${item.description ?? ''}`, 3),
+          );
+          if (kbBlock) task = `${task}\n\n${kbBlock}`;
+        } catch { /* non-fatal */ }
         ctx.bus.publish('sprint.phase.item.started', {
           sprintId: ctx.sprintId,
           phase,
@@ -1568,6 +1654,7 @@ export async function runExecutePhase(
             response: responseText,
             attempts,
             agentId: item.assignee,
+            startedAt: itemStartedAtIso,
             // Wave 2: attach per-run breakdown for downstream accumulation.
             breakdown: runBreakdown,
             // v6.7.4: surface model + effort to the Agents tab
@@ -1593,6 +1680,26 @@ export async function runExecutePhase(
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
+          // W2 — distill this outcome into the assignee's personal memory, plus
+          // any LEARNED: notes the agent chose to record. Non-fatal.
+          appendAgentMemory(ctx.projectRoot, item.assignee, {
+            kind: 'item-outcome',
+            value: `completed "${item.title}" (${attempts} attempt${attempts === 1 ? '' : 's'}, $${costUsd.toFixed(2)})${attempts > 1 ? ' — succeeded after retry' : ''}`,
+            cycleId: ctx.cycleId,
+            itemId: item.id,
+            outcome: 'completed',
+            costUsd,
+            files: item.files ?? [],
+            tags: item.tags ?? [],
+          });
+          for (const note of extractLearnedNotes(responseText)) {
+            appendAgentMemory(ctx.projectRoot, item.assignee, {
+              kind: 'self-note',
+              value: note,
+              cycleId: ctx.cycleId,
+              itemId: item.id,
+            });
+          }
           return completedResult;
         } catch (err) {
           lastError = stringifyExecuteError(err);
@@ -1635,7 +1742,9 @@ export async function runExecutePhase(
               response: '',
               attempts,
               error: lastError,
+              failureClass: deriveFailureClass(lastError),
               agentId: item.assignee,
+              startedAt: itemStartedAtIso,
               ...(failStepScoreIds.length > 0 ? { step_score_ids: failStepScoreIds } : {}),
               // Phase 0: lesson IDs injected into this item's prompt
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
@@ -1643,6 +1752,17 @@ export async function runExecutePhase(
             liveResults.set(item.id, failedResult as ItemResult);
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
+            // W2 — record the failure (with a short error excerpt) in the
+            // assignee's personal memory so its next similar run sees it.
+            appendAgentMemory(ctx.projectRoot, item.assignee, {
+              kind: 'item-outcome',
+              value: `failed "${item.title}" after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${(lastError ?? 'unknown').slice(0, 200)}`,
+              cycleId: ctx.cycleId,
+              itemId: item.id,
+              outcome: 'failed',
+              files: item.files ?? [],
+              tags: item.tags ?? [],
+            });
             return failedResult;
           }
         }
@@ -1658,7 +1778,9 @@ export async function runExecutePhase(
         response: '',
         attempts,
         error: lastError ?? 'unknown',
+        failureClass: deriveFailureClass(lastError),
         agentId: item.assignee,
+        startedAt: itemStartedAtIso,
       };
       liveResults.set(item.id, fallthroughResult as ItemResult);
       return fallthroughResult;
@@ -1681,6 +1803,35 @@ export async function runExecutePhase(
             ...(ctx.cycleId !== undefined ? { sessionId: ctx.cycleId, cycleId: ctx.cycleId } : { sessionId: ctx.sprintId }),
             bus: ctx.bus,
           });
+          // W5 — implement git.includeDiagnosticBranchOnFailure: preserve a
+          // FAILED child's exact worktree state as diagnostic/<cycleId>-<itemId>
+          // on origin so the operator can inspect what the agent actually did
+          // after the worktree is released. Best-effort; never fails the item.
+          if (
+            options.includeDiagnosticBranchOnFailure === true &&
+            liveResults.get(item.id)?.status === 'failed'
+          ) {
+            try {
+              const { execFile } = await import('node:child_process');
+              const { promisify } = await import('node:util');
+              const execFileAsync = promisify(execFile);
+              const safeCycle = (ctx.cycleId ?? ctx.sprintId).replace(/[^a-zA-Z0-9-]/g, '').slice(0, 24);
+              const safeItem = item.id.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 48);
+              const diagRef = `diagnostic/${safeCycle}-${safeItem}`;
+              await execFileAsync(
+                'git',
+                ['push', 'origin', `+HEAD:refs/heads/${diagRef}`],
+                { cwd: worktreeHandle.path, timeout: 60_000 },
+              );
+              ctx.bus.publish('execute.diagnostic-branch.pushed', {
+                sprintId: ctx.sprintId,
+                phase,
+                cycleId: ctx.cycleId,
+                itemId: item.id,
+                branch: diagRef,
+              });
+            } catch { /* diagnostics are best-effort */ }
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           commitFailure = new Error(
@@ -1720,6 +1871,7 @@ export async function runExecutePhase(
         if (liveResult) {
           liveResult.status = 'failed';
           liveResult.error = commitFailure.message;
+          liveResult.failureClass = 'worktree';
         }
       }
       const terminalResult = liveResults.get(item.id);
@@ -1864,6 +2016,46 @@ export async function runExecutePhase(
       liveResults.set(item.id, keptResult);
       settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: keptResult };
       continue;
+    }
+
+    // W5 — cascade containment: a child whose predecessor failed (or was
+    // itself blocked) cannot meaningfully run — it would burn budget and fail
+    // noisily ("A not completed"). Mark it blocked WITHOUT dispatching.
+    // Blocked items are checkpointed as 'skipped' so `--resume` and the gate
+    // fix-up loop re-enter them once the predecessor is fixed (#282
+    // semantics: only status==='completed' joins the resume skip set).
+    {
+      const preds = (item as { predecessors?: string[] }).predecessors ?? [];
+      const blockingPred = preds.find((p) => {
+        const r = liveResults.get(p);
+        return r !== undefined && (r.status === 'failed' || r.status === 'blocked');
+      });
+      if (blockingPred !== undefined) {
+        const blockedResult: ItemResult = {
+          itemId: item.id,
+          status: 'blocked',
+          costUsd: 0,
+          durationMs: 0,
+          response: '',
+          attempts: 0,
+          error: `blocked: predecessor ${blockingPred} did not complete`,
+          failureClass: 'unknown',
+          agentId: item.assignee,
+        };
+        liveResults.set(item.id, blockedResult);
+        settledResults[indexById.get(item.id)!] = { status: 'fulfilled', value: blockedResult };
+        enqueueItemCheckpoint(item.id, 'skipped', item.assignee);
+        ctx.bus.publish('sprint.phase.item.blocked', {
+          sprintId: ctx.sprintId,
+          phase,
+          cycleId: ctx.cycleId,
+          itemId: item.id,
+          agentId: item.assignee,
+          blockedBy: blockingPred,
+        });
+        snapshotExecuteProgress();
+        continue;
+      }
     }
 
     const files = itemFiles.get(item.id) ?? [];
@@ -2017,11 +2209,15 @@ export async function runExecutePhase(
   // ---- Compute phase status ----
   const total = itemResults.length;
   const failed = itemResults.filter((r) => r.status === 'failed').length;
-  const completed = total - failed;
+  // W5 — blocked items were never attempted: they count neither as completed
+  // nor toward the failure-rate threshold (their predecessor's failure
+  // already counted once).
+  const blockedCount = itemResults.filter((r) => r.status === 'blocked').length;
+  const completed = total - failed - blockedCount;
   let status: PhaseResult['status'];
   if (total === 0) {
     status = 'completed';
-  } else if (failed === total) {
+  } else if (failed + blockedCount === total) {
     status = 'blocked';
   } else if (failed / total > maxFailureRate) {
     status = 'failed';
@@ -2115,6 +2311,55 @@ export async function runExecutePhase(
   return phaseResult;
 }
 
+/**
+ * W5 — structured failure taxonomy. Derived deterministically from the item's
+ * error string: per-child verify failures carry `[check/severity]` markers
+ * (child-verify.formatChildVerifyError), transport failures carry their
+ * classified signatures, and the remaining buckets pattern-match the known
+ * failure modes from the four acceptance runs.
+ */
+export type FailureClass =
+  | 'deps'
+  | 'typecheck'
+  | 'tests'
+  | 'scope'
+  | 'iron-law'
+  | 'worktree'
+  | 'provider'
+  | 'timeout'
+  | 'budget'
+  | 'unknown';
+
+export function deriveFailureClass(error: string | undefined): FailureClass {
+  if (!error) return 'unknown';
+  const lower = error.toLowerCase();
+  // Per-child verify markers — most specific first.
+  if (lower.includes('[deps/failure]')) return 'deps';
+  if (lower.includes('[typecheck/failure]')) return 'typecheck';
+  if (lower.includes('[tests/failure]')) return 'tests';
+  if (lower.includes('[scope/failure]')) return 'scope';
+  if (lower.includes('[iron-law/failure]') || lower.includes('produced no source changes')) return 'iron-law';
+  if (lower.includes('worktree allocation failed') || lower.includes('worktree commit/push failed')) return 'worktree';
+  if (/\b(?:insufficient[_\s-]?quota|quota[_\s-]?exceeded|quota exhausted|billing|credits?|budget)\b/.test(lower)) return 'budget';
+  if (/\b(?:timeout|timed out|etimedout)\b/.test(lower)) return 'timeout';
+  if (/\b(?:429|rate\s*limit(?:ed)?|rate-limit(?:ed)?|throttl(?:e|ed|ing)|econnreset|eai_again|503|502|504|overloaded)\b/.test(lower)) return 'provider';
+  return 'unknown';
+}
+
+/** Per-class retry guidance spliced into the PRIOR ATTEMPT block (W5). */
+const FAILURE_CLASS_GUIDANCE: Record<FailureClass, string> = {
+  deps: 'Dependency provisioning failed — re-run the package-manager install first and verify node_modules completeness before any other step.',
+  typecheck: 'The type-checker rejected the change. Read the exact errors above, open the named files, and fix the types — do not work around them with casts.',
+  tests: 'Tests failed. Reproduce the failing tests FIRST, read their assertions, then fix code or tests accordingly.',
+  scope: 'You touched files outside the declared files[] contract. EITHER confine the change to the declared files OR honestly report that the declared scope is wrong and make the minimal in-scope change.',
+  'iron-law': 'The attempt produced no verifiable source change. Make a real, minimal code change that satisfies the item and prove it with a test.',
+  worktree: 'The isolated worktree failed (allocation or commit). Work from the current directory state; keep the diff minimal and committable.',
+  provider: 'The failure was a transient provider error, not your work. Re-do the task from scratch; previous partial output may be incomplete.',
+  timeout: 'The previous attempt timed out. Take the most direct path: smallest viable change, narrowest test run.',
+  budget: 'Budget pressure — produce the smallest correct change and stop. No exploration beyond the named files.',
+  unknown: 'Take a different approach. Read the relevant files carefully before making changes.',
+};
+
 // Exported for unit tests (repo-neutral tooling + declared-scope contract).
 export function buildItemPrompt(
   item: SprintItem,
@@ -2169,15 +2414,22 @@ Before you report completion you MUST verify your own work and paste the passing
 2. Run the targeted tests you added or touched: \`${pkg.testCommand} run <files>\`
 If either check fails, fix it before finishing. Never report done on unverified work.
 
+If you discover a durable, generalisable insight about this codebase (a
+convention, a gotcha, a build quirk), record it as a single line starting
+with \`LEARNED:\` in your final report — it is saved to your personal memory
+and shown to you on future tasks. At most 3 such lines; skip when nothing
+genuinely generalises.
+
 Work efficiently. Report what you changed when done.${selfEvalSec}`;
 
   if (attempt > 0 && lastError) {
+    const failureClass = deriveFailureClass(lastError);
     return `${base}
 
-PREVIOUS ATTEMPT FAILED:
+PREVIOUS ATTEMPT FAILED (class: ${failureClass}):
 ${lastError}
 
-Please take a different approach. Read the relevant files carefully before making changes.`;
+${FAILURE_CLASS_GUIDANCE[failureClass]}`;
   }
   return base;
 }

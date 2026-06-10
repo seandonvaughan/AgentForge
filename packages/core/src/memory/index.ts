@@ -17,3 +17,14 @@ export {
 } from './types.js';
 
 export type { SessionMemoryEntry } from './session-memory-manager.js';
+
+export {
+  appendAgentMemory,
+  readAgentMemory,
+  readAgentMemoryFromDir,
+  extractLearnedNotes,
+  AGENT_MEMORY_MAX_ENTRIES,
+  type AgentMemoryEntry,
+  type AgentMemoryKind,
+  type AppendAgentMemoryInput,
+} from './agent-memory.js';

@@ -1,8 +1,18 @@
 {
   "name": "agentforge",
-  "description": "Universal Agent Team Builder \u2014 assembles optimized AI agent teams with intelligent model routing, org-graph delegation, persistent memory, session management, self-modification (REFORGE), compounding flywheel, and a closed-loop autonomous development cycle (v6.4) that plans, executes, tests, commits, and opens PRs using your logged-in Claude Code session",
+  "description": "Universal Agent Team Builder — assembles optimized AI agent teams with intelligent model routing, org-graph delegation, per-agent memory, a project knowledge base, session management, self-modification (REFORGE), compounding flywheel, and a closed-loop autonomous development cycle that plans, executes, tests, commits, and opens PRs using your logged-in Claude Code session",
   "version": "10.5.1",
   "author": {
     "name": "Sean Vaughan"
+  },
+  "commands": "./commands",
+  "mcpServers": {
+    "agentforge": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/packages/mcp-server/dist/index.js"],
+      "env": {
+        "AGENTFORGE_PROJECT_ROOT": "${CLAUDE_PLUGIN_ROOT}"
+      }
+    }
   }
 }

@@ -90,6 +90,18 @@ describe('extractBreakdownFromAgentRun', () => {
     expect(bd.totalUsd).toBeCloseTo(18.00, 6);
   });
 
+  it('prices fable correctly', () => {
+    // Fable: $10/M input, $50/M output
+    const run = makeRun({
+      model: 'claude-fable-5',
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+    });
+    const bd = extractBreakdownFromAgentRun(run);
+    expect(bd.inputTokens.usd).toBeCloseTo(10.00, 6);
+    expect(bd.outputTokens.usd).toBeCloseTo(50.00, 6);
+    expect(bd.totalUsd).toBeCloseTo(60.00, 6);
+  });
+
   it('prices opus correctly', () => {
     // Opus: $5/M input, $25/M output
     const run = makeRun({

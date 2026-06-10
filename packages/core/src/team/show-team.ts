@@ -16,6 +16,7 @@ interface TeamManifest {
   project_hash: string;
   agents: TeamAgents;
   model_routing: {
+    fable?: string[];
     opus: string[];
     sonnet: string[];
     haiku: string[];
@@ -25,7 +26,7 @@ interface TeamManifest {
 
 interface AgentTemplate {
   name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
+  model: 'fable' | 'opus' | 'sonnet' | 'haiku';
   version: string;
   description?: string;
   skills?: string[];
@@ -122,6 +123,7 @@ function allAgents(manifest: TeamManifest): string[] {
 }
 
 function modelForAgent(manifest: TeamManifest, agentName: string): string {
+  if (manifest.model_routing.fable?.includes(agentName)) return 'fable';
   if (manifest.model_routing.opus.includes(agentName)) return 'opus';
   if (manifest.model_routing.sonnet.includes(agentName)) return 'sonnet';
   if (manifest.model_routing.haiku.includes(agentName)) return 'haiku';

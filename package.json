@@ -15,7 +15,8 @@
       "svelte": ">=5.55.7",
       "ws": "^8.20.1",
       "brace-expansion": "^5.0.6",
-      "hono": ">=4.12.21"
+      "hono": ">=4.12.21",
+      "shell-quote": ">=1.8.4"
     }
   },
   "workspaces": [

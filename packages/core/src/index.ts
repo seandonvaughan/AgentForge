@@ -26,6 +26,14 @@ export * from './federation/index.js';
 export * from './resilience/index.js';
 export * from './autonomous/index.js';
 export * from './memory/index.js';
+// W7 — Claude Code agent mirrors (re-emitted by `agentforge claude setup`).
+export {
+  emitClaudeCodeAgents,
+  buildAgentMarkdown,
+  type ClaudeCodeAgentSpec,
+  type EmitClaudeCodeAgentsOptions,
+  type EmitClaudeCodeAgentsResult,
+} from './team/engine/builder/cc-agent-emitter.js';
 export * from './runtime/index.js';
 export * from './manual/index.js';
 export * from './team/index.js';

@@ -487,11 +487,13 @@ export class ClaudeCodeCompatTransport implements ExecutionTransport {
     }
 
     // --fallback-model: enabled by default (undefined treated as true).
-    // Ladder: opus → sonnet, sonnet → haiku.
+    // Ladder: fable → opus, opus → sonnet, sonnet → haiku.
     const fallbackEnabled = request.enableFallback !== false;
     if (fallbackEnabled) {
       const model = request.agent.model;
-      if (model === 'opus') {
+      if (model === 'fable') {
+        args.push('--fallback-model', 'claude-opus-4-8');
+      } else if (model === 'opus') {
         args.push('--fallback-model', 'claude-sonnet-4-6');
       } else if (model === 'sonnet') {
         args.push('--fallback-model', 'claude-haiku-4-5');

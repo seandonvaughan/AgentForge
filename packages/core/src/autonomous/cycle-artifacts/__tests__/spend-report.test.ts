@@ -26,7 +26,7 @@ function phasesDir(): string {
   return join(cycleDir(), 'phases');
 }
 
-function writePlan(items: Array<{ id: string; title: string; estimatedCostUsd?: number; status?: string }>): void {
+function writePlan(items: Array<{ id: string; title: string; estimatedCostUsd?: number; status?: string; estimatedComplexity?: string }>): void {
   mkdirSync(cycleDir(), { recursive: true });
   writeFileSync(
     join(cycleDir(), 'plan.json'),
@@ -37,6 +37,7 @@ function writePlan(items: Array<{ id: string; title: string; estimatedCostUsd?: 
         title: i.title,
         ...(i.estimatedCostUsd !== undefined ? { estimatedCostUsd: i.estimatedCostUsd } : {}),
         ...(i.status !== undefined ? { status: i.status } : {}),
+        ...(i.estimatedComplexity !== undefined ? { estimatedComplexity: i.estimatedComplexity } : {}),
       })),
     }),
   );
@@ -88,6 +89,27 @@ describe('buildSpendReport — math', () => {
     expect(i2.plannedUsd).toBeNull();
     expect(i2.actualUsd).toBe(2);
     expect(i2.status).toBe('failed');
+  });
+
+  it('W3: per-item rows carry estimatedComplexity and estimateAccuracy', () => {
+    writePlan([
+      { id: 'i1', title: 'A', estimatedCostUsd: 4, estimatedComplexity: 'medium' },
+      { id: 'i2', title: 'B', estimatedCostUsd: 2, estimatedComplexity: 'low' },
+    ]);
+    writePhase('execute', {
+      costUsd: 7,
+      itemResults: [
+        { itemId: 'i1', status: 'completed', costUsd: 6 },
+        { itemId: 'i2', status: 'failed', costUsd: 0 },
+      ],
+    });
+    const report = buildSpendReport({ projectRoot: tmpRoot, cycleId, budgetUsd: 30 })!;
+    const i1 = report.perItem.find((r) => r.itemId === 'i1')!;
+    expect(i1.estimatedComplexity).toBe('medium');
+    expect(i1.estimateAccuracy).toBe(1.5); // 6 actual / 4 planned
+    const i2 = report.perItem.find((r) => r.itemId === 'i2')!;
+    expect(i2.estimatedComplexity).toBe('low');
+    expect(i2.estimateAccuracy).toBeUndefined(); // no positive actual
   });
 
   it('utilization is 0 when budget is 0 (no divide-by-zero)', () => {

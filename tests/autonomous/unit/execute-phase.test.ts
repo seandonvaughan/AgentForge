@@ -352,9 +352,11 @@ describe('runExecutePhase', () => {
       { maxItemRetries: 1 },
     );
     const secondCallPrompt = runtime.run.mock.calls[1]![1] as string;
-    expect(secondCallPrompt).toContain('PREVIOUS ATTEMPT FAILED');
+    // W5 — the retry block now labels the failure class and splices
+    // class-specific guidance (here: timeout) instead of the generic line.
+    expect(secondCallPrompt).toContain('PREVIOUS ATTEMPT FAILED (class: timeout)');
     expect(secondCallPrompt).toContain('boom-xyz');
-    expect(secondCallPrompt).toContain('different approach');
+    expect(secondCallPrompt).toContain('most direct path');
   });
 
   it('marks item failed with attempts=2 when both attempts fail', async () => {

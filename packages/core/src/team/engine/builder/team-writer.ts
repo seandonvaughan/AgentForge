@@ -64,6 +64,8 @@ async function buildModelsConfig(
 
   return {
     ...existing,
+    // Only write a fable bucket when populated — pre-fable configs stay byte-stable.
+    ...((modelRouting.fable?.length ?? 0) > 0 ? { fable: modelRouting.fable } : {}),
     opus: modelRouting.opus,
     sonnet: modelRouting.sonnet,
     haiku: modelRouting.haiku,
@@ -136,21 +138,23 @@ function mergeModelRouting(
   mergedAgentNames: Set<string>,
 ): ModelRouting {
   const scannedAgentNames = new Set<string>([
+    ...(scanned.fable ?? []),
     ...scanned.opus,
     ...scanned.sonnet,
     ...scanned.haiku,
   ]);
 
   const merged: ModelRouting = {
+    fable: [...(scanned.fable ?? [])],
     opus: [...scanned.opus],
     sonnet: [...scanned.sonnet],
     haiku: [...scanned.haiku],
   };
 
-  for (const tier of ["opus", "sonnet", "haiku"] as const) {
+  for (const tier of ["fable", "opus", "sonnet", "haiku"] as const) {
     for (const agent of existing[tier] ?? []) {
       if (!scannedAgentNames.has(agent) && mergedAgentNames.has(agent)) {
-        merged[tier].push(agent);
+        (merged[tier] ??= []).push(agent);
         scannedAgentNames.add(agent);
       }
     }
@@ -284,7 +288,7 @@ function buildModelRouting(
   manifest: TeamManifest,
   agents: Map<string, AgentTemplate>,
 ): ModelRouting {
-  const routing: ModelRouting = { opus: [], sonnet: [], haiku: [] };
+  const routing: ModelRouting = { fable: [], opus: [], sonnet: [], haiku: [] };
 
   const allAgentNames = [
     ...manifest.agents.strategic,
@@ -296,7 +300,7 @@ function buildModelRouting(
   for (const name of allAgentNames) {
     const template = agents.get(name);
     const tier = template?.model ?? "sonnet";
-    routing[tier].push(name);
+    (routing[tier] ??= []).push(name);
   }
 
   return routing;
@@ -366,9 +370,13 @@ function buildForgeLog(
 
   lines.push(`Model Routing`);
   lines.push(`${"─".repeat(30)}`);
+  const fableCount = manifest.model_routing.fable?.length ?? 0;
   const opusCount = manifest.model_routing.opus.length;
   const sonnetCount = manifest.model_routing.sonnet.length;
   const haikuCount = manifest.model_routing.haiku.length;
+  if (fableCount > 0) {
+    lines.push(`Fable (strategic+):     ${(manifest.model_routing.fable ?? []).join(", ")} [${fableCount} agents]`);
+  }
   lines.push(`Opus (strategic):       ${manifest.model_routing.opus.join(", ") || "none"} [${opusCount} agents]`);
   lines.push(`Sonnet (implementation): ${manifest.model_routing.sonnet.join(", ") || "none"} [${sonnetCount} agents]`);
   lines.push(`Haiku (utility):        ${manifest.model_routing.haiku.join(", ") || "none"} [${haikuCount} agents]`);
@@ -378,10 +386,11 @@ function buildForgeLog(
   lines.push(`Cost Optimization`);
   lines.push(`${"─".repeat(30)}`);
   const allOnOpusCost = agents.size; // normalized: 1 unit per agent on opus
-  const routedCost = opusCount * 1 + sonnetCount * 0.2 + haikuCount * 0.017; // relative to opus pricing
+  // Relative to opus pricing: fable $10/$50 = 2×, sonnet 0.2×, haiku 0.017×.
+  const routedCost = fableCount * 2 + opusCount * 1 + sonnetCount * 0.2 + haikuCount * 0.017;
   const savingsPercent = Math.round((1 - routedCost / allOnOpusCost) * 100);
   lines.push(`If all agents ran on Opus: ${agents.size} agents × Opus pricing = baseline`);
-  lines.push(`With model routing: ${opusCount} Opus + ${sonnetCount} Sonnet + ${haikuCount} Haiku`);
+  lines.push(`With model routing: ${fableCount} Fable + ${opusCount} Opus + ${sonnetCount} Sonnet + ${haikuCount} Haiku`);
   lines.push(`Estimated cost savings: ~${savingsPercent}% vs all-Opus baseline`);
   lines.push(``);
 

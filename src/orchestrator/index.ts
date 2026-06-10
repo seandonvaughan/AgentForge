@@ -189,8 +189,8 @@ export class Orchestrator {
     const routing = this.teamManifest.model_routing;
     let expectedTier: ModelTier | undefined;
 
-    for (const tier of ['opus', 'sonnet', 'haiku'] as ModelTier[]) {
-      if (routing[tier].includes(agentName)) {
+    for (const tier of ['fable', 'opus', 'sonnet', 'haiku'] as ModelTier[]) {
+      if (routing[tier]?.includes(agentName)) {
         expectedTier = tier;
         break;
       }
@@ -215,9 +215,11 @@ export class Orchestrator {
    * Returns the approximate cost multiplier between two model tiers.
    */
   private getModelCostMultiplier(actual: ModelTier, expected: ModelTier): string {
-    const costs: Record<ModelTier, number> = { opus: 15, sonnet: 3, haiku: 0.25 };
+    // Canonical per-MTok input pricing (matches core MODEL_PRICING).
+    const costs: Record<ModelTier, number> = { fable: 10, opus: 5, sonnet: 3, haiku: 1 };
     const ratio = costs[actual] / costs[expected];
-    return ratio.toFixed(0);
+    // One decimal: a 0.3x ratio must not render as "0x more".
+    return ratio.toFixed(1);
   }
 
   /**

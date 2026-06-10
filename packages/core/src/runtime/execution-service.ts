@@ -187,29 +187,61 @@ export class ExecutionService {
       );
     }
 
+    // W4 — jittered exponential backoff on rate-limit errors BEFORE switching
+    // providers: a 429 usually clears in seconds, and an immediate switch
+    // trades the requested tier (fable/opus) for a fallback when waiting
+    // would have kept it. Base is env-tunable so tests run at 1ms.
+    const backoffBaseMs = Number(process.env['AGENTFORGE_BACKOFF_BASE_MS'] ?? '2000');
+    const maxInPlaceRetries = 2;
+    const isRateLimitError = (err: unknown): boolean => {
+      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      return /\b(?:429|rate\s*limit(?:ed)?|rate-limit(?:ed)?|throttl(?:e|ed|ing)|overloaded)\b/.test(msg);
+    };
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
     const switches: ProviderSwitchEvent[] = [];
     for (let i = 0; i < candidates.length; i += 1) {
       const { transport, runtimeModeResolved } = candidates[i]!;
-      try {
-        const execution = await transport.execute(request);
-        const result = session.completeSuccess(
-          switches.length > 0 ? { ...execution, providerSwitches: switches } : execution,
-          runtimeModeResolved,
-        );
-        return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
-      } catch (error) {
-        const next = candidates[i + 1];
-        if (isRetriableTransportError(error) && next) {
-          switches.push({
-            from: transport.kind,
-            to: next.transport.kind,
-            reason: error instanceof Error ? error.message : String(error),
-          });
-          continue;
+      let lastError: unknown;
+      let surfaced: RunResult | null = null;
+      for (let attempt = 0; attempt <= maxInPlaceRetries; attempt += 1) {
+        try {
+          const execution = await transport.execute(request);
+          const result = session.completeSuccess(
+            switches.length > 0 ? { ...execution, providerSwitches: switches } : execution,
+            runtimeModeResolved,
+          );
+          return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
+        } catch (error) {
+          lastError = error;
+          if (isRateLimitError(error) && attempt < maxInPlaceRetries) {
+            const delay = backoffBaseMs * 2 ** attempt * (0.5 + Math.random() * 0.5);
+            // delay 0 (AGENTFORGE_BACKOFF_BASE_MS=0) skips the timer entirely —
+            // required under vi.useFakeTimers, where a real setTimeout never fires.
+            if (delay > 0) await sleep(delay);
+            continue; // retry the SAME transport
+          }
+          if (isRetriableTransportError(error) && candidates[i + 1]) {
+            break; // fall through to the provider switch below
+          }
+          surfaced = session.completeFailure(modelId, runtimeModeResolved, error, transport.kind);
+          break;
         }
-        const result = session.completeFailure(modelId, runtimeModeResolved, error, transport.kind);
-        return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
       }
+      if (surfaced) {
+        return switches.length > 0 ? { ...surfaced, providerSwitches: switches } : surfaced;
+      }
+      const next = candidates[i + 1];
+      if (next) {
+        switches.push({
+          from: transport.kind,
+          to: next.transport.kind,
+          reason: lastError instanceof Error ? lastError.message : String(lastError),
+        });
+        continue;
+      }
+      const result = session.completeFailure(modelId, runtimeModeResolved, lastError, transport.kind);
+      return switches.length > 0 ? { ...result, providerSwitches: switches } : result;
     }
 
     // Unreachable: the final candidate always returns via success or the

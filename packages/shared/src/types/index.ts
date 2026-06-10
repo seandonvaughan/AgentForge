@@ -1,5 +1,5 @@
 // Agent model tiers
-export type ModelTier = 'opus' | 'sonnet' | 'haiku';
+export type ModelTier = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
 // Workspace identifier
 export type WorkspaceId = string;

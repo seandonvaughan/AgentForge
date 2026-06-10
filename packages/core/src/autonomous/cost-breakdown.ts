@@ -76,11 +76,17 @@ const CACHE_CREATION_MULTIPLIER   = 1.25;
  * the function safe for unknown future model IDs.
  */
 function resolveModelTier(model: string, capabilityTier?: ModelTier): ModelTier {
-  if (capabilityTier === 'opus' || capabilityTier === 'sonnet' || capabilityTier === 'haiku') {
+  if (
+    capabilityTier === 'fable' ||
+    capabilityTier === 'opus' ||
+    capabilityTier === 'sonnet' ||
+    capabilityTier === 'haiku'
+  ) {
     return capabilityTier;
   }
 
   const lower = model.toLowerCase();
+  if (lower.includes('fable'))  return 'fable';
   if (lower.includes('opus'))   return 'opus';
   if (lower.includes('haiku'))  return 'haiku';
   return 'sonnet';

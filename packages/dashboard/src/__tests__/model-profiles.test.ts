@@ -68,6 +68,17 @@ describe('model profile resolution (provider-accurate)', () => {
     expect(codexTierFor('unknown-model')).toBeNull();
   });
 
+  it('fable tier (v24) is Claude-served only: claude-fable-5, by name, never codex', () => {
+    expect(codexProfileFor('fable')?.modelId).toBe('claude-fable-5');
+    expect(codexProfileFor('fable')?.tier).toBe('fable');
+    expect(codexProfileFor('fable')?.family).toBe('claude');
+    expect(codexProfileFor('fable')?.effort).toBe('xhigh');
+    expect(codexProfileFor('claude-fable-5')?.modelId).toBe('claude-fable-5');
+    expect(codexProfileFor('claude-fable-5')?.tier).toBe('fable');
+    // A lone xhigh hint resolves to opus — fable is by-name only.
+    expect(codexProfileFor('', 'xhigh')?.tier).toBe('opus');
+  });
+
   it('formats profile labels and falls back for unresolved values', () => {
     expect(codexProfileLabel('sonnet', 'high')).toBe('claude-sonnet-4-6 / high');
     expect(codexProfileLabel('claude-opus-4-8', 'high')).toBe('claude-opus-4-8 / high');

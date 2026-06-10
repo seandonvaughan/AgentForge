@@ -197,6 +197,71 @@ describe('loadObservedChildCosts', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('W3: surfaces persisted cost-priors (per-complexity medians) in the planner prompt', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = mkdtempSync(join(tmpdir(), 'af-priors-thread-'));
+    try {
+      const configDir = join(root, '.agentforge', 'config');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, 'cost-priors.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          low: { medianUsd: 1.75, count: 4 },
+          medium: { medianUsd: 4.2, count: 6 },
+          totalSamples: 10,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      const prompts: string[] = [];
+      const runtime = {
+        run: async (_a: string, task: string) => {
+          prompts.push(task);
+          return { output: planJson(goodChildren), costUsd: 0.5, model: 'fable' };
+        },
+      };
+      await decomposeObjective({ ...objective, budgetUsd: 12.5 }, runtime, { projectRoot: root });
+      expect(prompts[0]).toContain("CALIBRATED from this repository's completed cycles (10 item(s))");
+      expect(prompts[0]).toContain('low ~$1.75 (n=4)');
+      expect(prompts[0]).toContain('medium ~$4.20 (n=6)');
+      expect(prompts[0]).toContain('Prefer these over the static table');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('W1: appends relevant knowledge-base notes to the planner prompt', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { writeKnowledgeEntry } = await import('../../../knowledge/persistence.js');
+    const root = mkdtempSync(join(tmpdir(), 'af-kb-planner-'));
+    try {
+      writeKnowledgeEntry(root, {
+        text: 'RBAC roles live in the tenancy module; multi-tenant checks go through TenantGuard.',
+        source: 'review',
+      });
+      const prompts: string[] = [];
+      const runtime = {
+        run: async (_a: string, task: string) => {
+          prompts.push(task);
+          return { output: planJson(goodChildren), costUsd: 0.5, model: 'fable' };
+        },
+      };
+      await decomposeObjective(
+        { ...objective, description: 'Add multi-tenant RBAC roles' },
+        runtime,
+        { projectRoot: root },
+      );
+      expect(prompts[0]).toContain('## Project knowledge');
+      expect(prompts[0]).toContain('TenantGuard');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---- planner grounding (cycle c5e6efb9) ------------------------------------

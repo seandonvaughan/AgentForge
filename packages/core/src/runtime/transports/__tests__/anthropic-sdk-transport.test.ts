@@ -449,6 +449,11 @@ describe('AnthropicSdkTransport', () => {
       expect(supportsSamplingParams('claude-haiku-4-5')).toBe(true);
       expect(supportsSamplingParams('claude-opus-4-1')).toBe(true);
     });
+
+    it('returns false for the Fable family (sampling params removed)', () => {
+      expect(supportsSamplingParams('claude-fable-5')).toBe(false);
+      expect(supportsSamplingParams('CLAUDE-FABLE-5[1m]')).toBe(false);
+    });
   });
 
   // ── isAvailable ───────────────────────────────────────────────────────────

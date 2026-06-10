@@ -6,6 +6,10 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import { writeMemoryEntry } from '../../memory/types.js';
+import { writeCostPriors } from '../cycle-artifacts/cost-priors.js';
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
+import { clusterLowQuality } from '../../skills/flywheel/cluster-low-quality.js';
+import { proposeSkill } from '../../skills/flywheel/propose-skill.js';
 
 export const LEARN_PHASE_DEFAULT_TOOLS = ['Read', 'Glob', 'Grep'];
 
@@ -255,6 +259,14 @@ Format as markdown with section headers.`;
       );
       writeFileSync(retrospectivePath, retrospective, 'utf8');
       if (status === 'completed' && retrospective.trim().length > 0) {
+        // W1 — persist the retrospective's recommendations into the knowledge
+        // base so future planners and item prompts can retrieve them.
+        writeKnowledgeEntry(ctx.projectRoot, {
+          text: retrospective.slice(0, 2000),
+          source: 'learn',
+          cycleId: ctx.cycleId,
+          tags: ['retrospective'],
+        });
         writeLearnedFacts({
           projectRoot: ctx.projectRoot,
           cycleId: ctx.cycleId,
@@ -289,6 +301,44 @@ Format as markdown with section headers.`;
       // non-fatal
     }
   }
+
+  // W3 — close the remaining learning loops. Both steps are deterministic
+  // (no LLM), best-effort, and never fail the phase.
+  //
+  // 1. Estimator self-calibration: refresh .agentforge/config/cost-priors.json
+  //    from completed cycles' spend-report actuals. The decomposer's budget
+  //    prompt block prefers these repo-local medians over its static table.
+  const priors = writeCostPriors(ctx.projectRoot);
+  if (priors) {
+    ctx.bus.publish('learn.cost-priors.updated', {
+      cycleId: ctx.cycleId,
+      totalSamples: priors.totalSamples,
+    });
+  }
+  // 2. Skill flywheel (propose-only): cluster low-step-score capability tags
+  //    and write skill proposals for human review. Approval stays manual
+  //    (dashboard /flywheel/proposals or `agentforge skills approve-proposal`).
+  let skillProposals = 0;
+  try {
+    const clusters = clusterLowQuality({ projectRoot: ctx.projectRoot });
+    const proposalsDir = join(ctx.projectRoot, '.agentforge', 'flywheel', 'proposals');
+    for (const cluster of clusters) {
+      try {
+        // existingSkills [] → create-only proposals. The skills-catalog
+        // refine-vs-create comparison stays a CLI concern; the learn phase
+        // must work on foreign repos with no catalog at all.
+        proposeSkill({ cluster, existingSkills: [], projectRoot: ctx.projectRoot, outputDir: proposalsDir });
+        skillProposals += 1;
+      } catch { /* skip cluster */ }
+    }
+    if (skillProposals > 0) {
+      ctx.bus.publish('learn.skill-proposals.written', {
+        cycleId: ctx.cycleId,
+        count: skillProposals,
+        dir: proposalsDir,
+      });
+    }
+  } catch { /* non-fatal */ }
 
   ctx.bus.publish('sprint.phase.completed', {
     sprintId: ctx.sprintId,

@@ -68,6 +68,37 @@ describe("fresh-context", () => {
       expect(buildFreshContextBlock("coder", agentforgeDir)).toBe("");
     });
 
+    it("injects the agent's OWN history ahead of the shared pool (W2)", async () => {
+      const { appendAgentMemory } = await import(
+        "../../packages/core/src/memory/agent-memory.js"
+      );
+      appendAgentMemory(tempRoot, "coder", {
+        kind: "item-outcome",
+        value: 'completed "add tests" (1 attempt, $1.50)',
+        outcome: "completed",
+      });
+      appendAgentMemory(tempRoot, "coder", {
+        kind: "self-note",
+        value: "the build requires corepack pnpm, plain npm fails",
+      });
+      await seedMemory(tempRoot, [
+        { value: "[CRITICAL] shared finding about review", tags: ["review"], ageDays: 1 },
+      ]);
+
+      const block = buildFreshContextBlock("coder", agentforgeDir);
+      expect(block).toContain("## Your history");
+      expect(block).toContain("corepack pnpm");
+      expect(block).toContain('completed "add tests"');
+      // Personal section comes BEFORE the shared pool section.
+      const personalIdx = block.indexOf("## Your history");
+      const sharedIdx = block.indexOf("## Fresh Context");
+      expect(personalIdx).toBeGreaterThanOrEqual(0);
+      expect(sharedIdx).toBeGreaterThan(personalIdx);
+      // Another agent sees none of coder's personal history.
+      const reviewerBlock = buildFreshContextBlock("reviewer", agentforgeDir);
+      expect(reviewerBlock).not.toContain("corepack pnpm");
+    });
+
     it("returns empty string when no entries match the agent's role tags", async () => {
       await seedMemory(tempRoot, [
         { value: "dashboard fix", tags: ["dashboard"], ageDays: 1 },

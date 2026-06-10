@@ -18,6 +18,12 @@ export const AfCodexReadinessInput = ProjectRootInput.extend({
 export const AfCyclePreviewInput = ProjectRootInput.extend({
   budgetUsd: z.number().positive().optional(),
   maxItems: z.number().int().positive().optional(),
+  /**
+   * W7 — objective mode: rehearse the epic decomposition (planner +
+   * deterministic validation) and return the children/waves/budget-band JSON.
+   * Costs one planner LLM call (~$5); never executes a cycle.
+   */
+  objective: z.string().min(8).max(8192).optional(),
 });
 
 export const AfCycleStatusInput = ProjectRootInput.extend({
@@ -96,12 +102,29 @@ export async function afCyclePreview(
   const args = ['cycle', 'preview', '--project-root', projectRoot];
   if (input.budgetUsd !== undefined) args.push('--budget-usd', String(input.budgetUsd));
   if (input.maxItems !== undefined) args.push('--max-items', String(input.maxItems));
+  const objectiveMode = typeof input.objective === 'string' && input.objective.trim().length > 0;
+  if (objectiveMode) {
+    args.push('--objective', input.objective!.trim(), '--json');
+  }
 
   const cli = resolveCli(projectRoot);
   if (!cli.ok) return cli;
 
-  const run = await runCli(cli.data as string, args, projectRoot, 120_000);
+  // Objective mode runs the epic planner (one real LLM call) — allow 10 min.
+  const run = await runCli(cli.data as string, args, projectRoot, objectiveMode ? 600_000 : 120_000);
   if (!run.ok) return run;
+
+  if (objectiveMode) {
+    try {
+      return { ok: true, data: JSON.parse(String(run.data)), error: null };
+    } catch {
+      return {
+        ok: false,
+        data: { stdout: run.data },
+        error: { code: 'PREVIEW_PARSE_ERROR', message: 'Objective preview output was not valid JSON.' },
+      };
+    }
+  }
 
   return {
     ok: true,
@@ -216,6 +239,146 @@ function resolveCli(defaultProjectRoot: string | undefined): ToolResult {
     };
   }
   return { ok: true, data: cliPath, error: null };
+}
+
+// ── W7: af_agent_invoke ──────────────────────────────────────────────────────
+
+export const AfAgentInvokeInput = ProjectRootInput.extend({
+  agentId: z.string().min(1).max(64),
+  task: z.string().min(8).max(16384),
+  /** Hard spend cap for the run. Required — refuse uncapped invocations. */
+  budgetUsd: z.number().positive().max(25),
+  /** Allowed tool hints threaded to CLI runtimes (e.g. Read,Glob,Grep). */
+  tools: z.array(z.string().min(1).max(64)).max(16).optional(),
+});
+export type AfAgentInvokeInputType = z.infer<typeof AfAgentInvokeInput>;
+
+const SAFE_AGENT_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Dispatch ONE forged agent with a budget cap via `agentforge run invoke`.
+ * This is the write-capable surface for Claude Code sessions; the budget cap
+ * is schema-required and bounded at $25.
+ */
+export async function afAgentInvoke(
+  input: AfAgentInvokeInputType,
+  defaultProjectRoot?: string,
+): Promise<ToolResult> {
+  const trustedRoot = resolveTrustedProjectRoot(input.projectRoot, defaultProjectRoot);
+  if (!trustedRoot.ok) return trustedRoot;
+  const projectRoot = trustedRoot.data as string;
+
+  const agentMatch = SAFE_AGENT_ID_RE.exec(input.agentId);
+  if (!agentMatch) {
+    return {
+      ok: false,
+      data: null,
+      error: { code: 'INVALID_AGENT_ID', message: 'agentId must be alphanumerics, dashes, underscores (≤64 chars)' },
+    };
+  }
+
+  const args = [
+    'run', 'invoke',
+    '--agent', agentMatch[0],
+    '--task', input.task,
+    '--project-root', projectRoot,
+    '--budget', String(input.budgetUsd),
+  ];
+  for (const tool of input.tools ?? []) {
+    if (/^[a-zA-Z0-9_-]{1,64}$/.test(tool)) args.push('--tool', tool);
+  }
+
+  const cli = resolveCli(projectRoot);
+  if (!cli.ok) return cli;
+
+  const run = await runCli(cli.data as string, args, projectRoot, 900_000);
+  if (!run.ok) return run;
+  return { ok: true, data: { stdout: run.data }, error: null };
+}
+
+// ── W7: af_cycle_events ──────────────────────────────────────────────────────
+
+export const AfCycleEventsInput = ProjectRootInput.extend({
+  cycleId: z.string().min(8).max(64),
+  /** Byte offset returned as nextCursor by the previous call; 0 from the start. */
+  cursor: z.number().int().min(0).optional().default(0),
+  limit: z.number().int().min(1).max(500).optional().default(100),
+});
+export type AfCycleEventsInputType = z.infer<typeof AfCycleEventsInput>;
+
+/**
+ * Incremental tail of a cycle's events.jsonl. Claude Code polls this during a
+ * long-running cycle: pass the returned nextCursor on the next call to read
+ * only new events. Read-only, pure fs.
+ */
+export function afCycleEvents(
+  input: AfCycleEventsInputType,
+  defaultProjectRoot?: string,
+): ToolResult {
+  const trustedRoot = resolveTrustedProjectRoot(input.projectRoot, defaultProjectRoot);
+  if (!trustedRoot.ok) return trustedRoot;
+  const projectRoot = trustedRoot.data as string;
+
+  const idMatch = /^[a-zA-Z0-9-]{8,64}$/.exec(input.cycleId);
+  if (!idMatch) {
+    return {
+      ok: false,
+      data: null,
+      error: { code: 'INVALID_CYCLE_ID', message: 'cycleId must be alphanumerics/dashes (8-64 chars)' },
+    };
+  }
+  const eventsPath = join(projectRoot, '.agentforge', 'cycles', idMatch[0], 'events.jsonl');
+  if (!existsSync(eventsPath)) {
+    return {
+      ok: false,
+      data: null,
+      error: { code: 'CYCLE_NOT_FOUND', message: `No events.jsonl for cycle ${idMatch[0]}` },
+    };
+  }
+
+  let raw: string;
+  try {
+    raw = readFileSync(eventsPath, 'utf8');
+  } catch (err) {
+    return {
+      ok: false,
+      data: null,
+      error: { code: 'READ_FAILED', message: err instanceof Error ? err.message : String(err) },
+    };
+  }
+
+  const byteLength = Buffer.byteLength(raw, 'utf8');
+  const cursor = Math.min(input.cursor ?? 0, byteLength);
+  const slice = Buffer.from(raw, 'utf8').subarray(cursor).toString('utf8');
+  const lines = slice.split('\n');
+  // The final element is either '' (complete trailing newline) or a partial
+  // line still being written — never emit it; the cursor stops before it.
+  const lastPartial = lines.pop() ?? '';
+
+  const events: unknown[] = [];
+  let consumedBytes = 0;
+  for (const line of lines) {
+    // Stop consuming once the page is full — nextCursor must point at the
+    // first UNREAD event, not past skipped ones.
+    if (events.length >= (input.limit ?? 100)) break;
+    consumedBytes += Buffer.byteLength(line, 'utf8') + 1; // +1 newline
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      events.push(JSON.parse(trimmed));
+    } catch { /* skip corrupt line */ }
+  }
+
+  return {
+    ok: true,
+    data: {
+      cycleId: idMatch[0],
+      events,
+      nextCursor: cursor + consumedBytes,
+      eof: lastPartial.length === 0 && cursor + consumedBytes >= byteLength,
+    },
+    error: null,
+  };
 }
 
 async function runCli(

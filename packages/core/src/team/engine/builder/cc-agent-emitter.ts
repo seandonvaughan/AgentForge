@@ -31,7 +31,7 @@ export interface ClaudeCodeAgentSpec {
   /** Full markdown system prompt body (no frontmatter). */
   systemPrompt: string;
   /** Model tier for this agent. Defaults to `"sonnet"`. */
-  model?: "opus" | "sonnet" | "haiku";
+  model?: "fable" | "opus" | "sonnet" | "haiku";
   /** Claude Code tool names. Defaults to `["Read","Edit","Write","Bash","Grep","Glob"]`. */
   tools?: string[];
 }
@@ -91,7 +91,10 @@ export function buildAgentMarkdown(spec: ClaudeCodeAgentSpec): string {
     : DEFAULT_TOOLS
   ).join(",");
 
-  const model = spec.model ?? DEFAULT_MODEL;
+  const tier = spec.model ?? DEFAULT_MODEL;
+  // Claude Code's agent frontmatter accepts the opus/sonnet/haiku aliases but
+  // has no 'fable' alias — emit the full model id for the fable tier.
+  const model = tier === "fable" ? "claude-fable-5" : tier;
 
   // Use js-yaml to safely serialise frontmatter fields.
   // `dump()` is called per-field so we can control the exact layout while

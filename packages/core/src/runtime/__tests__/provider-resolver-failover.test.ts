@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExecutionService } from '../execution-service.js';
 import { ProviderResolver } from '../provider-resolver.js';
 import {
   CodexAuthError,
   TransportInvalidRequestError,
   TransportRateLimitError,
+  TransportTimeoutError,
   isRetriableTransportError,
 } from '../transport-errors.js';
 import type { ProviderAvailabilityMap } from '../provider-availability.js';
@@ -33,7 +34,7 @@ function result(kind: ExecutionTransport['kind'], response = 'ok'): ExecutionRes
 /** A transport whose execute() behavior is controlled by `behavior`. */
 function stub(
   kind: ExecutionTransport['kind'],
-  behavior: 'succeed' | (() => Error),
+  behavior: 'succeed' | (() => Error | null),
 ): ExecutionTransport & { calls: number } {
   const t = {
     kind,
@@ -42,7 +43,9 @@ function stub(
     execute: vi.fn(async (): Promise<ExecutionResult> => {
       t.calls += 1;
       if (behavior === 'succeed') return result(kind);
-      throw behavior();
+      const err = behavior();
+      if (err) throw err;
+      return result(kind); // null → this attempt succeeds (backoff-clear tests)
     }),
   } as ExecutionTransport & { calls: number };
   return t;
@@ -131,7 +134,12 @@ describe('ProviderResolver.resolveOrdered', () => {
 // ---------------------------------------------------------------------------
 
 describe('ExecutionService.run — auto-switch on retriable failure', () => {
-  it('switches to the next provider on a retriable error; result reflects B with one switch', async () => {
+  // W4 — rate-limit errors are retried in place (with backoff) before the
+  // provider switch; zero base collapses the backoff for tests.
+  beforeEach(() => { process.env['AGENTFORGE_BACKOFF_BASE_MS'] = '0'; });
+  afterEach(() => { delete process.env['AGENTFORGE_BACKOFF_BASE_MS']; });
+
+  it('switches to the next provider after exhausting in-place rate-limit retries', async () => {
     const a = stub('anthropic-sdk', () => new TransportRateLimitError('rate limited'));
     const b = stub('openai-sdk', 'succeed');
     const service = new ExecutionService({ transports: [a, b] });
@@ -143,10 +151,45 @@ describe('ExecutionService.run — auto-switch on retriable failure', () => {
 
     expect(res.status).toBe('completed');
     expect(res.providerKind).toBe('openai-sdk'); // real re-dispatch to B, not a re-label
-    expect(a.calls).toBe(1);
+    expect(a.calls).toBe(3); // 1 attempt + 2 in-place backoff retries (W4)
     expect(b.calls).toBe(1);
     expect(res.providerSwitches).toHaveLength(1);
     expect(res.providerSwitches![0]).toMatchObject({ from: 'anthropic-sdk', to: 'openai-sdk' });
+  });
+
+  it('W4: a rate limit that clears on retry keeps the SAME provider (no switch)', async () => {
+    let aCalls = 0;
+    const a = stub('anthropic-sdk', () => {
+      aCalls += 1;
+      return aCalls < 2 ? new TransportRateLimitError('429') : null; // clears on 2nd attempt
+    });
+    const b = stub('openai-sdk', 'succeed');
+    const service = new ExecutionService({ transports: [a, b] });
+
+    const res = await service.run(config, {
+      task: 'do it',
+      providerPreference: ['anthropic-sdk', 'openai-sdk'],
+    });
+
+    expect(res.status).toBe('completed');
+    expect(res.providerKind).toBe('anthropic-sdk'); // kept the requested provider
+    expect(b.calls).toBe(0);
+    expect(res.providerSwitches ?? []).toHaveLength(0);
+  });
+
+  it('non-rate-limit retriable errors (timeout/network) switch immediately', async () => {
+    const a = stub('anthropic-sdk', () => new TransportTimeoutError('request timed out', 60000));
+    const b = stub('openai-sdk', 'succeed');
+    const service = new ExecutionService({ transports: [a, b] });
+
+    const res = await service.run(config, {
+      task: 'do it',
+      providerPreference: ['anthropic-sdk', 'openai-sdk'],
+    });
+
+    expect(res.status).toBe('completed');
+    expect(a.calls).toBe(1); // no in-place retry for non-429 classes
+    expect(b.calls).toBe(1);
   });
 
   it('does NOT switch on a non-retriable error — surfaces the failure on A', async () => {
@@ -176,7 +219,7 @@ describe('ExecutionService.run — auto-switch on retriable failure', () => {
       providerPreference: ['anthropic-sdk', 'anthropic-sdk', 'openai-sdk'],
     });
 
-    expect(a.calls).toBe(1); // not retried twice despite duplicate preference
+    expect(a.calls).toBe(3); // 3 in-place attempts, but never re-enters the rotation
     expect(b.calls).toBe(1);
     expect(res.providerKind).toBe('openai-sdk');
   });
@@ -192,8 +235,8 @@ describe('ExecutionService.run — auto-switch on retriable failure', () => {
     });
 
     expect(res.status).toBe('failed');
-    expect(a.calls).toBe(1);
-    expect(b.calls).toBe(1);
+    expect(a.calls).toBe(3); // rate-limited → in-place retries before switching
+    expect(b.calls).toBe(1); // auth error → no in-place retry
     expect(res.providerKind).toBe('openai-sdk'); // last attempted
   });
 });

@@ -17,6 +17,12 @@ export * from './cycle-health.js';
 export * from './pr-body-renderer.js';
 export * from './kill-switch.js';
 export * from './preview-cycle.js';
+export * from './preview-objective.js';
+// Surface the decompose failure type + runtime contract for preview callers
+// (the CLI imports only from the core barrel). Deliberately NOT `export *`
+// from decompose/ — its CycleResult type collides with the autonomous one.
+export { DecomposeError } from './decompose/decompose-objective.js';
+export type { DecomposeRuntime } from './decompose/decompose-objective.js';
 export { ProposalToBacklog } from './proposal-to-backlog.js';
 export type { ProposalAdapter } from './proposal-to-backlog.js';
 export type { BacklogItem as AutonomousBacklogItem } from './proposal-to-backlog.js';

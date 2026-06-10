@@ -69,6 +69,7 @@
         { label: 'Flywheel',    href: '/flywheel',    icon: Sparkles },
         { label: 'Insights',    href: '/insights',    icon: TrendingUp },
         { label: 'Memory',      href: '/memory',      icon: Brain },
+        { label: 'Knowledge',   href: '/knowledge',   icon: BookOpen },
         { label: 'KBs',         href: '/knowledge/kbs', icon: BookOpen },
         { label: 'Health',      href: '/health',      icon: Activity },
         { label: 'Durability',  href: '/durability',  icon: ShieldCheck },

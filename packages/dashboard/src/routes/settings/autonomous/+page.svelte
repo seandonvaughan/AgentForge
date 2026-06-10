@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { Card, Btn, Badge } from '$lib/components/v2';
 
-  type ModelCap = 'opus' | 'sonnet' | 'haiku' | 'none';
+  type ModelCap = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'none';
   type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -148,6 +148,7 @@
         <div class="field">
           <label for="model-cap" class="field-label">Codex profile cap (default)</label>
           <select id="model-cap" class="field-input" bind:value={modelCap}>
+            <option value="fable">fable tier — Top capability (Claude Fable 5)</option>
             <option value="opus">xhigh profile — Most capable</option>
             <option value="sonnet">high profile — Balanced</option>
             <option value="haiku">medium profile — Fast &amp; efficient</option>

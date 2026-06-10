@@ -11,6 +11,7 @@ import type { ModelTier, EffortLevel } from "../types/index.js";
 
 /** Maps each ModelTier to its concrete Claude model ID. */
 export const MODEL_MAP: Record<ModelTier, string> = {
+  fable: "claude-fable-5",
   opus: "claude-opus-4-20250514",
   sonnet: "claude-sonnet-4-20250514",
   haiku: "claude-haiku-4-5-20251001",
@@ -18,6 +19,7 @@ export const MODEL_MAP: Record<ModelTier, string> = {
 
 /** Default maxTokens for each model tier (used by token estimator). */
 export const MODEL_DEFAULTS: Record<ModelTier, { maxTokens: number; temperature: number }> = {
+  fable: { maxTokens: 4096, temperature: 0.7 },
   opus: { maxTokens: 4096, temperature: 0.7 },
   sonnet: { maxTokens: 4096, temperature: 0.5 },
   haiku: { maxTokens: 2048, temperature: 0.3 },
@@ -25,6 +27,7 @@ export const MODEL_DEFAULTS: Record<ModelTier, { maxTokens: number; temperature:
 
 /** Default effort level per model tier. */
 export const MODEL_EFFORT_DEFAULTS: Record<ModelTier, EffortLevel> = {
+  fable: "high",
   opus: "high",
   sonnet: "medium",
   haiku: "low",
