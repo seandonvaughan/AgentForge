@@ -72,7 +72,8 @@ path.
 ### `auto` (default)
 
 `auto` registers the available Anthropic SDK, Claude Code compatibility, Codex
-CLI, and OpenAI SDK transports. At the cycle level, the per-job router (see
+CLI, and OpenAI SDK transports, preserving the
+historical Claude-first preference in resolution order. At the cycle level, the per-job router (see
 "Claude-first resolution" above) supplies a `providerPreference` chain per
 item; at the transport level the `ProviderResolver` selects one at runtime:
 
