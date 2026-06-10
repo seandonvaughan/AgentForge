@@ -1644,6 +1644,33 @@ describe('CycleRunner objective mode (P0.2)', () => {
     await initGitRepo(tmpDir);
     const deps = makeMockDeps();
     deps.proposalAdapter = emptyProposalAdapter();
+    // Cycle 5242ca92 — an objective cycle now REFUSES the legacy main-tree
+    // release when the execute phase carries no epicIntegration signal. This
+    // test pins the empty-backlog bypass (STAGE 1), not the release path, so
+    // the mocked execute phase surfaces a minimal epic signal like the real
+    // epic execute phase does.
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        result: {
+          phase: 'execute',
+          status: 'completed',
+          durationMs: 500,
+          costUsd: 1.0,
+          agentRuns: [],
+          itemResults: [],
+          epicIntegration: {
+            branch: 'codex/epic-objtest1',
+            epicId: 'epic-objtest1',
+            mergedBranches: [],
+            hadConflicts: false,
+          },
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
 
     const runner = new CycleRunner({
       cwd: tmpDir,

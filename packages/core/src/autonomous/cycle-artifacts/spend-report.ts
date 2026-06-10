@@ -194,7 +194,16 @@ export function buildSpendReport(args: BuildSpendReportArgs): SpendReport | null
   };
 }
 
-/** Write spend-report.json. Best-effort — never throws. */
+/**
+ * Write spend-report.json. Best-effort — never throws.
+ *
+ * Monotonic guard (cycle 5242ca92): a degraded resume rebuilds the report from
+ * a vacuous execute.json and would clobber the rich perItem rows the original
+ * run wrote (the final report showed $3.93 with an empty item table). An
+ * incoming report with NO perItem rows never replaces an existing report that
+ * HAS them — the existing file is kept and the write is silently skipped.
+ * An empty existing report (or no file) is still overwritten normally.
+ */
 export function writeSpendReport(
   projectRoot: string,
   cycleId: string,
@@ -202,6 +211,12 @@ export function writeSpendReport(
 ): void {
   const path = join(projectRoot, '.agentforge', 'cycles', cycleId, 'spend-report.json');
   try {
+    if (report.perItem.length === 0) {
+      const existing = tryReadJson(path);
+      if (existing && Array.isArray(existing.perItem) && existing.perItem.length > 0) {
+        return;
+      }
+    }
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify(report, null, 2));
   } catch {

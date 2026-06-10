@@ -33,6 +33,15 @@ export interface MemoryEntrySSR {
   createdAt?: string;
   updatedAt?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * v25 — real agent-memory fields (entries from memory/agents/*.jsonl):
+   * kind ('self-note' = LEARNED note | 'item-outcome') plus the item, cycle
+   * and outcome the entry was recorded under.
+   */
+  kind?: string;
+  itemId?: string;
+  cycleId?: string;
+  outcome?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -265,6 +274,74 @@ function readMemoryEntries(root: string, opts: {
         }
       } catch {
         // skip unreadable files
+      }
+    }
+
+    // ── Per-agent personal memory (v25): memory/agents/<agentId>.jsonl ──────
+    // LEARNED self-notes and item outcomes recorded during the execute phase.
+    // Surfaced with type 'agent-memory', agentId derived from the filename and
+    // the real `kind`/`itemId`/`cycleId`/`outcome` fields preserved so the
+    // page can render the LEARNED view on first paint (no API round-trip).
+    const agentsMemDir = join(memDir, 'agents');
+    if (existsSync(agentsMemDir)) {
+      let agentFiles: string[] = [];
+      try {
+        agentFiles = readdirSync(agentsMemDir).filter(f => f.endsWith('.jsonl'));
+      } catch {
+        // agents dir unreadable — shared-pool entries above still render
+      }
+
+      for (const filename of agentFiles) {
+        const ownerAgentId = filename.replace(/\.jsonl$/, '');
+        try {
+          const raw = readFileSync(join(agentsMemDir, filename), 'utf-8');
+          for (const line of raw.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const e = JSON.parse(trimmed) as {
+                id?: string;
+                kind?: string;
+                value?: string;
+                createdAt?: string;
+                itemId?: string;
+                cycleId?: string;
+                outcome?: string;
+                tags?: string[];
+              };
+              if (!e.id) continue;
+
+              const rawValue = typeof e.value === 'string' ? e.value : '';
+              const entry: MemoryEntrySSR = {
+                id: e.id,
+                key: `${ownerAgentId} · ${e.kind ?? 'note'}`,
+                value: rawValue.slice(0, 500),
+                summary: rawValue.slice(0, 200),
+                category: e.kind === 'self-note' ? 'lesson' : 'project',
+                type: 'agent-memory',
+                agentId: ownerAgentId,
+                source: ownerAgentId,
+                tags: e.tags ?? [],
+                ...(e.createdAt !== undefined
+                  ? { createdAt: e.createdAt, updatedAt: e.createdAt }
+                  : {}),
+                ...(e.kind !== undefined ? { kind: e.kind } : {}),
+                ...(e.itemId !== undefined ? { itemId: e.itemId } : {}),
+                ...(e.cycleId !== undefined ? { cycleId: e.cycleId } : {}),
+                ...(e.outcome !== undefined ? { outcome: e.outcome } : {}),
+              };
+
+              agentSet.add(ownerAgentId);
+              typeSet.add('agent-memory');
+              seenIds.add(e.id);
+              allEntries.push(entry);
+            } catch {
+              // skip malformed JSONL lines
+            }
+          }
+        } catch {
+          // skip unreadable per-agent files
+        }
       }
     }
   }

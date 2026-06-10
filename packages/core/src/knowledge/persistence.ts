@@ -65,18 +65,31 @@ export interface WriteKnowledgeEntryOptions {
   /**
    * Maximum number of entities to extract per call.  Defaults to 30 — enough
    * to capture meaningful signal without flooding the graph with noise terms.
+   * Only consulted when `extractTerms` is true.
    */
   maxEntities?: number | undefined;
+  /**
+   * v25 — opt-in heuristic term-entity extraction (default OFF).
+   *
+   * The auto-extracted CamelCase/quoted-phrase terms proved to be chaff in
+   * practice (~1800 term entities vs 0 useful notes on disk), so by default
+   * writeKnowledgeEntry persists ONLY the full-text note entity. Pass
+   * `extractTerms: true` to also mine and persist term entities.
+   */
+  extractTerms?: boolean | undefined;
 }
 
 /**
- * Extract entity-like terms from `opts.text` and append them to
+ * Persist a full-text NOTE entity (and, opt-in, extracted term entities) to
  * `.agentforge/knowledge/entities.jsonl`.
  *
- * The extraction is purely heuristic (EntityExtractor.extractFromText):
+ * Term extraction is purely heuristic (EntityExtractor.extractFromText):
  *   - Quoted strings
  *   - CamelCase identifiers (module/class names)
  *   - Capitalized multi-word phrases
+ *
+ * v25: term extraction is OFF by default (`extractTerms: true` re-enables it)
+ * — the note entity is the useful artifact; term soup flooded the store.
  *
  * Returns the entities written.  Write failures are swallowed so phase
  * results are never affected by knowledge persistence errors.
@@ -88,33 +101,42 @@ export function writeKnowledgeEntry(
   if (!opts.text) return [];
 
   const extractor = new EntityExtractor();
-  const rawNames = extractor.extractFromText(opts.text);
+  const now = new Date().toISOString();
+  const entities: Entity[] = [];
 
-  // Deduplicate names (case-insensitive) and cap the result set.
-  const seen = new Set<string>();
-  const uniqueNames: string[] = [];
-  for (const name of rawNames) {
-    const lower = name.toLowerCase();
-    if (!seen.has(lower)) {
-      seen.add(lower);
-      uniqueNames.push(name);
+  // v25 — term-entity extraction is opt-in (default OFF). The ~30 heuristic
+  // terms per call drowned the store in chaff; only the note below is the
+  // default persisted artifact.
+  if (opts.extractTerms === true) {
+    const rawNames = extractor.extractFromText(opts.text);
+
+    // Deduplicate names (case-insensitive) and cap the result set.
+    const seen = new Set<string>();
+    const uniqueNames: string[] = [];
+    for (const name of rawNames) {
+      const lower = name.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        uniqueNames.push(name);
+      }
+    }
+    const cappedNames = uniqueNames.slice(0, opts.maxEntities ?? 30);
+
+    for (const name of cappedNames) {
+      entities.push({
+        id: randomUUID(),
+        name,
+        type: extractor.inferType(name),
+        properties: {
+          source: opts.source,
+          ...(opts.cycleId !== undefined ? { cycleId: opts.cycleId } : {}),
+          ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
     }
   }
-  const cappedNames = uniqueNames.slice(0, opts.maxEntities ?? 30);
-
-  const now = new Date().toISOString();
-  const entities: Entity[] = cappedNames.map(name => ({
-    id: randomUUID(),
-    name,
-    type: extractor.inferType(name),
-    properties: {
-      source: opts.source,
-      ...(opts.cycleId !== undefined ? { cycleId: opts.cycleId } : {}),
-      ...(opts.tags !== undefined ? { tags: opts.tags } : {}),
-    },
-    createdAt: now,
-    updatedAt: now,
-  }));
 
   // W1 — in addition to the extracted TERMS above, persist one full-text NOTE
   // entity carrying the source text itself. Terms make the graph queryable;

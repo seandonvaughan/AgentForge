@@ -34,6 +34,8 @@ export interface ClaudeCodeAgentSpec {
   model?: "fable" | "opus" | "sonnet" | "haiku";
   /** Claude Code tool names. Defaults to `["Read","Edit","Write","Bash","Grep","Glob"]`. */
   tools?: string[];
+  /** Reasoning effort level (e.g. "high", "xhigh") — emitted when present. */
+  effort?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +106,9 @@ export function buildAgentMarkdown(spec: ClaudeCodeAgentSpec): string {
     description: spec.description,
     tools,
     model,
+    // Optional reasoning-effort pass-through — only emitted when the agent
+    // YAML declares one, so pre-effort mirrors stay byte-identical.
+    ...(spec.effort ? { effort: spec.effort } : {}),
   };
 
   // Strip the trailing newline that yaml.dump always appends; we'll add our

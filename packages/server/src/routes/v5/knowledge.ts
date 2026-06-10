@@ -105,6 +105,64 @@ export async function knowledgeRoutes(
     return reply.send({ data: entity });
   });
 
+  // GET /api/v5/knowledge/notes — v25, paginated full-text NOTE entities.
+  //
+  // Notes (properties.kind === 'note') are the useful knowledge artifacts:
+  // epic-review rationales, agent LEARNED notes, and audit/review summaries.
+  // Newest first; ?limit= (default 50, max 200) and ?offset= (default 0).
+  //
+  // Registration note: knowledgeRoutes is mounted by BOTH server paths —
+  // packages/server/src/server.ts (no-adapter) and routes/v5/index.ts
+  // (adapter) — so this route is automatically live on both.
+  //
+  // Cycles append notes to entities.jsonl from a SEPARATE process, so when a
+  // projectRoot is configured we re-read the file per request rather than
+  // serving the startup-hydrated in-memory graph (which would go stale and
+  // whose hydration re-keys entity ids). Without a projectRoot we fall back
+  // to the in-memory graph (tests / pure in-memory deployments).
+  app.get('/api/v5/knowledge/notes', async (req, reply) => {
+    const q = req.query as { limit?: string; offset?: string };
+    const parsedLimit = Number.parseInt(q.limit ?? '', 10);
+    const parsedOffset = Number.parseInt(q.offset ?? '', 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+    const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+
+    const sourceEntities = opts.projectRoot
+      ? loadKnowledgeEntities(opts.projectRoot)
+      : graph.listEntities();
+
+    const notes = sourceEntities
+      .filter((e) => e.properties?.['kind'] === 'note')
+      .map((e) => ({
+        id: e.id,
+        content:
+          typeof e.description === 'string' && e.description.length > 0
+            ? e.description
+            : e.name,
+        source:
+          typeof e.properties?.['source'] === 'string'
+            ? (e.properties['source'] as string)
+            : 'unknown',
+        tags: Array.isArray(e.properties?.['tags'])
+          ? (e.properties['tags'] as unknown[]).filter((t): t is string => typeof t === 'string')
+          : [],
+        createdAt: e.createdAt,
+      }))
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+
+    const page = notes.slice(offset, offset + limit);
+    return reply.send({
+      data: page,
+      meta: {
+        total: notes.length,
+        limit,
+        offset,
+        returned: page.length,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
   // GET /api/v5/knowledge/graph — full graph with stats
   app.get('/api/v5/knowledge/graph', async (_req, reply) => {
     const stats = graph.stats();
