@@ -727,6 +727,66 @@ export async function runTestPhase(ctx: PhaseContext): Promise<PhaseResult> {
 }
 
 export async function runReviewPhase(ctx: PhaseContext): Promise<PhaseResult> {
+  const phase = 'review' as const;
+  const startMs = Date.now();
+
+  // P0.6 — on the objective/epic path there is exactly ONE scheduled review
+  // call: the strong-model epic review that runs at the gate slot
+  // (packages/core/src/autonomous/phase-handlers/epic-review.ts). Skip the
+  // per-diff code-reviewer dispatch here so the epic path does not pay for two
+  // reviews. Detection mirrors the pattern in runGatePhase (introduced by child-7).
+  // Legacy (signal) cycles are untouched.
+  if (ctx.objective !== undefined) {
+    const durationMs = Date.now() - startMs;
+    const skipResult: PhaseResult = {
+      phase,
+      status: 'completed',
+      durationMs,
+      costUsd: 0,
+      agentRuns: [],
+    };
+
+    if (ctx.cycleId) {
+      const phasesDir = join(
+        ctx.projectRoot,
+        '.agentforge',
+        'cycles',
+        ctx.cycleId,
+        'phases',
+      );
+      try {
+        mkdirSync(phasesDir, { recursive: true });
+        writeFileSync(
+          join(phasesDir, 'review.json'),
+          JSON.stringify(
+            {
+              phase,
+              skipped: true,
+              reason:
+                'epic path — single strong-model epic review runs at the gate slot',
+              costUsd: 0,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch {
+        // non-fatal
+      }
+    }
+
+    ctx.bus.publish('sprint.phase.completed', {
+      sprintId: ctx.sprintId,
+      sprintVersion: ctx.sprintVersion,
+      phase,
+      cycleId: ctx.cycleId,
+      result: skipResult,
+      completedAt: nowIso(),
+    });
+
+    return skipResult;
+  }
+
   const result = await runLlmPhase(ctx, 'review');
 
   // Write review-finding memory entries for CRITICAL and MAJOR findings so the
