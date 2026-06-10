@@ -176,9 +176,9 @@ test.describe('Agents List Page', () => {
     await expect(editor).toBeVisible();
 
     await editor.fill(updatedYaml);
-    // Two Save buttons exist now (structured editor + raw YAML) — use the raw
-    // section's header-scoped one.
-    await page.locator('.af-config-header').getByRole('button', { name: 'Save' }).click();
+    // Two Save buttons exist now (structured editor first in DOM, raw YAML
+    // second) and both sit in .af-config-header containers — take the last.
+    await page.getByRole('button', { name: 'Save', exact: true }).last().click();
 
     await expect.poll(() => savedYaml).toContain('Updated from dashboard test');
     await expect(page.locator('.af-save-ok')).toContainText('Saved');
