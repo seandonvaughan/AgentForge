@@ -518,4 +518,60 @@ A: Yes. `src/api/client.ts` is a standalone module. Import and use it directly.
 
 ---
 
-**Last updated:** April 8, 2026
+**Last updated:** June 10, 2026
+
+---
+
+## § 6 — Cycle REST API (v5): objective cycles & epic artifacts
+
+The objective-mode operator console (epic `5242ca92`) added the following
+surface to the v5 REST API served on `http://localhost:4750`.
+
+### POST /api/v5/cycles — optional objective fields
+
+`POST /api/v5/cycles` accepts two optional fields alongside the existing body:
+
+| Field | Type | Constraints | Effect |
+|---|---|---|---|
+| `objective` | string | non-empty after trim, ≤ 4000 chars | Launches the cycle as an objective-driven epic: the plan phase decomposes the text into a wave-layered child DAG instead of scoring a backlog |
+| `budgetUsd` | number | positive, finite | Per-cycle budget; feeds the decomposer's spend band `(budgetUsd − 6) / 1.2` |
+
+Both fields are persisted on the created cycle's config and echoed by the
+cycle detail endpoint. Validation failures return `400` with a JSON `error`.
+
+### GET /api/v5/cycles — epic row fields
+
+Each row in the cycles list now carries:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `epic` | boolean | True when the cycle has an objective or a `decomposition.json` artifact |
+| `childCount` | number | Number of children in the epic decomposition (0 for signal cycles) |
+
+### GET /api/v5/cycles/:id/decomposition
+
+Returns the cycle's `decomposition.json` (the epic planner's wave-layered
+child DAG: `epicId`, `rationale`, `children[]` with `files`, `estimatedCostUsd`,
+`predecessors`, computed `wave`, plus the `validationReport`).
+`404 { "error": "decomposition not found" }` when the cycle is not an epic or
+planning has not completed.
+
+### GET /api/v5/cycles/:id/epic-review
+
+Returns `phases/epic-review.json` — the structured strong-model review of the
+integration branch: `verdict` (`APPROVE` | `REQUEST_CHANGES` | `TRIAGE`),
+`rationale`, `faultedItems[]` (`itemId`, `reason`, `files`),
+`schemaValidationOk`, `triageUsed`, `costUsd`. `404` until the epic review has
+run.
+
+### GET /api/v5/cycles/:id/spend-report
+
+Returns `spend-report.json` — the planned-vs-actual reconciliation written at
+release: `totalUsd`, `budgetUsd`, `utilization`, `executionUsd`, `overheadUsd`,
+and `perItem[]` (`itemId`, `title`, `plannedUsd`, `actualUsd`, `status`).
+`404` until the cycle completes.
+
+All three GET endpoints validate `:id` with match-then-use sanitization and
+path containment, and are registered in both server entry paths (no-adapter
+`server.ts` and adapter `registerV5Routes`).
+
