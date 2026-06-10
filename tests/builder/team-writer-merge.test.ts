@@ -40,7 +40,7 @@ function makeManifest(overrides: Partial<TeamManifest> = {}): TeamManifest {
   };
 }
 
-function makeAgentTemplate(name: string, model: "opus" | "sonnet" | "haiku" = "sonnet"): AgentTemplate {
+function makeAgentTemplate(name: string, model: "fable" | "opus" | "sonnet" | "haiku" = "sonnet"): AgentTemplate {
   return {
     name,
     model,
@@ -566,5 +566,42 @@ describe("writeTeam — merges with existing team.yaml on disk", () => {
 
     expect(written.agents.strategic).toContain("architect");
     expect(written.agents.implementation).toContain("coder");
+  });
+
+  it("emits .claude/agents mirrors on the legacy path (fable maps to its full model id)", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "agentforge-mirror-test-"));
+    dirsToClean.push(projectDir);
+
+    const scannedManifest = makeManifest({
+      agents: {
+        strategic: ["epic-planner"],
+        implementation: ["coder"],
+        quality: [],
+        utility: [],
+      },
+      model_routing: { fable: ["epic-planner"], opus: [], sonnet: ["coder"], haiku: [] },
+      delegation_graph: {},
+    });
+
+    const agentTemplates = new Map<string, AgentTemplate>([
+      ["epic-planner", makeAgentTemplate("epic-planner", "fable")],
+      ["coder", makeAgentTemplate("coder", "sonnet")],
+    ]);
+
+    await writeTeam(projectDir, scannedManifest, agentTemplates, makeMinimalScanResult());
+
+    const { readFile } = await import("node:fs/promises");
+    const plannerMd = await readFile(
+      join(projectDir, ".claude", "agents", "epic-planner.md"),
+      "utf-8",
+    );
+    expect(plannerMd).toContain("model: claude-fable-5");
+    expect(plannerMd).toContain("You are the epic-planner agent.");
+
+    const coderMd = await readFile(
+      join(projectDir, ".claude", "agents", "coder.md"),
+      "utf-8",
+    );
+    expect(coderMd).toContain("model: sonnet");
   });
 });

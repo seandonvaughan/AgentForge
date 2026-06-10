@@ -15,8 +15,10 @@ sections of each agent's context. Be specific and evidence-based.
 
 The user message is a JSON object with:
 
-- `memoryEntries` — array of raw memory JSONL objects from `.agentforge/memory/`
-  (each entry has at minimum `type`, `value`, `createdAt`)
+- `memoryEntries` — array of raw memory JSONL objects from `.agentforge/memory/`,
+  including the per-agent files under `.agentforge/memory/agents/*.jsonl`
+  (each entry has at minimum `type`, `value`, `createdAt`; per-agent entries
+  may carry an `agentId` identifying which agent learned the lesson)
 - `gitLog` — array of `{ hash, date, message }` — last 90 days of git log
 - `cycleOutcomes` — optional array of recent cycle result summaries
 

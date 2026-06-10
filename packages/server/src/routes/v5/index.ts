@@ -64,6 +64,9 @@ import { kbsRoutes } from './kbs.js';
 import { workspacesActiveRoutes } from './workspaces-active.js';
 import { runStreamRoutes } from './run-stream.js';
 import { cyclePrsRoutes } from './cycle-prs.js';
+import { cycleDecompositionRoutes } from './cycle-decomposition.js';
+import { cycleEpicReviewRoutes } from './cycle-epic-review.js';
+import { cycleSpendReportRoutes } from './cycle-spend-report.js';
 import { cycleCostBreakdownRoutes } from './cycle-cost-breakdown.js';
 import { qualityRoutes } from './quality.js';
 // === wave5:T4 ===
@@ -555,6 +558,11 @@ export async function registerV5Routes(
 
   // ── Cycle PR ledger (MergeQueue enriched with CI status) ─────────────────
   await cyclePrsRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Epic artifacts (child-4 — decomposition / epic-review / spend-report) ─
+  await cycleDecompositionRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await cycleEpicReviewRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await cycleSpendReportRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 
   // ── Cycle cost breakdown (per-token breakdown from cycle.json) ────────────
   await cycleCostBreakdownRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});

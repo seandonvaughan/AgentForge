@@ -564,4 +564,101 @@ describe("synthesizeTeam", () => {
       }
     });
   });
+
+  describe("fable tier and explicit description", () => {
+    /** 12-agent plan with one fable strategist (with description) + pmm + 10 engineers. */
+    function buildFablePlanJson(): string {
+      const agents: TeamPlanAgent[] = [
+        {
+          id: "pr-merge-manager",
+          tier: "sonnet",
+          category: "utility",
+          owns_subsystems: [],
+          capability_tags: ["git", "merge"],
+          system_prompt:
+            "You are the PR merge manager. Primary files: `packages/server/src/server.ts`, `.github/workflows/ci.yml`.",
+          auto_include_files: [".github/workflows/ci.yml"],
+          learnings_seed: [],
+        },
+        {
+          id: "epic-planner",
+          tier: "fable",
+          category: "strategic",
+          owns_subsystems: ["packages/server/src"],
+          capability_tags: ["epic-decomposition", "architecture"],
+          description: "Cross-cutting epic decomposition authority",
+          system_prompt:
+            "You are the epic planner. Primary files: `packages/server/src/server.ts`, `packages/dashboard/src/routes/+layout.svelte`.",
+          auto_include_files: ["packages/server/src/server.ts"],
+          learnings_seed: [],
+        },
+      ];
+      for (let i = 0; i < 10; i++) {
+        agents.push({
+          id: `engineer-${String(i).padStart(2, "0")}`,
+          tier: "sonnet",
+          category: "implementation",
+          owns_subsystems: ["packages/server/src"],
+          capability_tags: [`fastify-route-${i}`, "typescript"],
+          system_prompt: `You are engineer-${i}. Primary files: \`packages/server/src/server.ts\`, \`packages/dashboard/src/routes/+layout.svelte\`.`,
+          auto_include_files: ["packages/server/src/server.ts"],
+          learnings_seed: [],
+        });
+      }
+      const plan: TeamPlan = { team_name: "fable-team", agents };
+      return `\`\`\`json\n${JSON.stringify(plan, null, 2)}\n\`\`\``;
+    }
+
+    it("maps a fable agent's .claude/agents mirror to claude-fable-5", async () => {
+      const projectRoot = await makeTmpRoot();
+      const runtime = mockRuntime(buildFablePlanJson());
+
+      await synthesizeTeam(buildOpts(runtime, projectRoot));
+
+      const md = await readFile(
+        join(projectRoot, ".claude", "agents", "epic-planner.md"),
+        "utf-8",
+      );
+      expect(md).toContain("model: claude-fable-5");
+      // The YAML keeps the tier name for routing
+      const agentYaml = yaml.load(
+        await readFile(join(projectRoot, ".agentforge", "agents", "epic-planner.yaml"), "utf-8"),
+      ) as Record<string, unknown>;
+      expect(agentYaml.model).toBe("fable");
+    });
+
+    it("routes fable agents into team.yaml model_routing.fable", async () => {
+      const projectRoot = await makeTmpRoot();
+      const runtime = mockRuntime(buildFablePlanJson());
+
+      await synthesizeTeam(buildOpts(runtime, projectRoot));
+
+      const parsed = yaml.load(
+        await readFile(join(projectRoot, ".agentforge", "team.yaml"), "utf-8"),
+      ) as { model_routing: Record<string, string[]> };
+      expect(parsed.model_routing.fable).toContain("epic-planner");
+      expect(parsed.model_routing.opus).not.toContain("epic-planner");
+    });
+
+    it("uses the explicit description field for the .md frontmatter instead of joined tags", async () => {
+      const projectRoot = await makeTmpRoot();
+      const runtime = mockRuntime(buildFablePlanJson());
+
+      await synthesizeTeam(buildOpts(runtime, projectRoot));
+
+      const md = await readFile(
+        join(projectRoot, ".claude", "agents", "epic-planner.md"),
+        "utf-8",
+      );
+      expect(md).toContain("Cross-cutting epic decomposition authority");
+      expect(md).not.toContain("epic-decomposition, architecture");
+
+      // Agents without a description still fall back to joined capability_tags
+      const engineerMd = await readFile(
+        join(projectRoot, ".claude", "agents", "engineer-00.md"),
+        "utf-8",
+      );
+      expect(engineerMd).toContain("fastify-route-0, typescript");
+    });
+  });
 });

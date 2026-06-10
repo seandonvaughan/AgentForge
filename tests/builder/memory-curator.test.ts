@@ -119,6 +119,34 @@ describe("memory-curator", () => {
       const entries = loadMemoryEntries(tempRoot);
       expect(entries.length).toBe(1);
     });
+
+    it("loads per-agent files under memory/agents/ and stamps agentId", async () => {
+      const memDir = join(tempRoot, ".agentforge", "memory");
+      const agentsDir = join(memDir, "agents");
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(
+        join(memDir, "review-finding.jsonl"),
+        JSON.stringify(makeEntry({ value: "shared lesson" })) + "\n"
+      );
+      await writeFile(
+        join(agentsDir, "coder.jsonl"),
+        JSON.stringify(makeEntry({ value: "coder lesson" })) + "\n"
+      );
+      await writeFile(
+        join(agentsDir, "linter.jsonl"),
+        JSON.stringify(makeEntry({ value: "linter lesson" })) + "\n"
+      );
+
+      const entries = loadMemoryEntries(tempRoot);
+      expect(entries.length).toBe(3);
+
+      const coderEntry = entries.find((e) => e.value === "coder lesson");
+      expect(coderEntry?.agentId).toBe("coder");
+      const linterEntry = entries.find((e) => e.value === "linter lesson");
+      expect(linterEntry?.agentId).toBe("linter");
+      const sharedEntry = entries.find((e) => e.value === "shared lesson");
+      expect(sharedEntry?.agentId).toBeUndefined();
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -220,7 +248,7 @@ describe("memory-curator", () => {
       expect(lessons.length).toBe(4);
     });
 
-    it("defaults to the 12 lesson cap used by the mutator", () => {
+    it("defaults to the documented 8-lesson cap", () => {
       const agent = makeAgent("Coder");
       const entries = Array.from({ length: 20 }, (_, i) =>
         makeEntry({
@@ -230,7 +258,38 @@ describe("memory-curator", () => {
       );
 
       const lessons = curateLearnings(agent, entries);
-      expect(lessons.length).toBe(12);
+      expect(lessons.length).toBe(8);
+    });
+
+    it("weights an agent's OWN per-agent entries above shared-pool affinity matches", () => {
+      const coder = makeAgent("Coder");
+      const entries = [
+        makeEntry({
+          value: "shared affinity lesson",
+          tags: ["fix", "critical"],
+        }),
+        makeEntry({
+          value: "coder's own lesson",
+          tags: ["unrelated"],
+          agentId: "coder",
+        }),
+      ];
+
+      const lessons = curateLearnings(coder, entries, { maxLessons: 2 });
+      expect(lessons[0]).toContain("coder's own lesson");
+    });
+
+    it("never leaks another agent's private entries", () => {
+      const coder = makeAgent("Coder");
+      const entries = [
+        makeEntry({
+          value: "linter private lesson",
+          tags: ["fix", "critical"],
+          agentId: "linter",
+        }),
+      ];
+
+      expect(curateLearnings(coder, entries)).toEqual([]);
     });
   });
 

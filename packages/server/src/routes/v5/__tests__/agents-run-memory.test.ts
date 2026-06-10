@@ -14,7 +14,8 @@ vi.mock('@agentforge/core', () => ({
   }),
   loadAgentConfig: coreMocks.loadAgentConfig,
   recordManualInvokeMemory: coreMocks.recordManualInvokeMemory,
-  resolveProviderModelProfile: vi.fn(() => ({ modelId: 'gpt-5.3-codex', effort: 'high' })),
+  readAgentMemoryFromDir: vi.fn(() => []),
+  AGENT_MEMORY_MAX_ENTRIES: 200,
 }));
 
 async function buildApp() {
@@ -69,6 +70,32 @@ describe('POST /api/v5/agents/:id/run memory', () => {
       task: 'Implement the thing',
       result: expect.objectContaining({ status: 'completed' }),
     }));
+  });
+
+  it('defaults runtimeMode to "auto" when the request omits it', async () => {
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/agents/coder/run',
+      payload: { task: 'Implement with the default transport' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(coreMocks.run).toHaveBeenCalledWith(expect.objectContaining({ runtimeMode: 'auto' }));
+  });
+
+  it('honours an explicit runtimeMode from the request body', async () => {
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v5/agents/coder/run',
+      payload: { task: 'Run on codex explicitly', runtimeMode: 'codex-cli' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(coreMocks.run).toHaveBeenCalledWith(expect.objectContaining({ runtimeMode: 'codex-cli' }));
   });
 
   it('records canonical failure memory when direct agent route invoke throws', async () => {
