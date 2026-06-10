@@ -10,6 +10,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { safeJoin } from '../../lib/safe-join.js';
@@ -38,6 +39,16 @@ export async function cycleDecompositionRoutes(
 ): Promise<void> {
   const projectRoot = opts.projectRoot ?? process.cwd();
 
+  // Per-IP rate limit for this filesystem-reading route (CodeQL
+  // js/missing-rate-limiting). Mirrors cycle-prs.ts: register once per server
+  // instance, tolerate the dual-registration "already registered" error.
+  try {
+    await app.register(rateLimit, { global: false, max: 60, timeWindow: '1 minute' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.toLowerCase().includes('already registered')) throw err;
+  }
+
   /**
    * GET /api/v5/cycles/:id/decomposition
    *
@@ -47,6 +58,7 @@ export async function cycleDecompositionRoutes(
    */
   app.get<{ Params: { id: string } }>(
     '/api/v5/cycles/:id/decomposition',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const rawId = req.params.id;
 
