@@ -21,6 +21,9 @@ import { join, dirname } from 'node:path';
 import type { PhaseContext, PhaseResult } from '../phase-scheduler.js';
 import type { AgentOutputSchema } from '../../runtime/types.js';
 import { writeMemoryEntry, type GateVerdictMetadata } from '../../memory/types.js';
+// v25 — the epic path feeds the W1 knowledge store: every resolved review
+// rationale is persisted as a full-text note for future planner/agent retrieval.
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import { collectSprintItemTags } from './sprint-utils.js';
 import {
   GateRejectedError,
@@ -473,6 +476,21 @@ export async function runEpicReview(
         ? 'rejected'
         : 'pending';
   writeGateVerdictMemory(ctx, memVerdict, rationale, faultedItems);
+
+  // v25 — persist the review rationale to the W1 knowledge store as a note so
+  // the epic path finally writes knowledge (pre-v25 only the legacy
+  // audit/review/learn handlers fed entities.jsonl). Strictly best-effort:
+  // a knowledge-write failure must never affect the verdict.
+  try {
+    writeKnowledgeEntry(ctx.projectRoot, {
+      text: rationale,
+      source: 'epic-review',
+      tags: [...(ctx.cycleId ? [ctx.cycleId] : []), finalVerdict],
+      cycleId: ctx.cycleId,
+    });
+  } catch {
+    // best-effort — never affects the verdict
+  }
 
   const phaseResult: PhaseResult = {
     phase,
