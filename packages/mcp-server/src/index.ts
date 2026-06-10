@@ -3,12 +3,17 @@
  * AgentForge MCP Server
  *
  * Exposes three tools to MCP clients (Claude Code, Claude Desktop, etc.):
- *   - af_agent_dispatch   — look up the best agent for given capability tags
- *   - af_kb_lookup        — fetch a Knowledge Base document
- *   - af_memory_query     — semantic search over AgentForge memory JSONL files
- *   - af_codex_readiness  — inspect Codex runtime readiness
- *   - af_cycle_preview    — preview a cycle without starting one
- *   - af_cycle_status     — list/show recorded cycle state
+ *   - af_agent_dispatch       — look up the best agent for given capability tags
+ *   - af_kb_lookup            — fetch a Knowledge Base document
+ *   - af_memory_query         — semantic search over AgentForge memory JSONL files
+ *   - af_codex_readiness      — inspect Codex runtime readiness
+ *   - af_cycle_preview        — preview a cycle without starting one
+ *   - af_cycle_status         — list/show recorded cycle state
+ *   - af_epic_decomposition   — child DAG summary of an objective cycle
+ *   - af_epic_review          — epic judgment verdict for an objective cycle
+ *   - af_spend_report         — planned-vs-actual spend for a cycle
+ *   - af_agent_memory         — an agent's personal W2 memory, newest first
+ *   - af_objective_preview    — sizing math + the exact CLI preview command
  *
  * Transport: stdio (default) or HTTP (set AGENTFORGE_MCP_HTTP=1).
  * Auth:      bearer token from AGENTFORGE_MCP_TOKEN (optional).
@@ -37,6 +42,13 @@ import {
 import { afKbLookup } from './tools/af-kb-lookup.js';
 import { afMemoryQuery } from './tools/af-memory-query.js';
 import { afKbSearch } from './tools/af-kb-search.js';
+import { afAgentMemory } from './tools/af-agent-memory.js';
+import {
+  afEpicDecomposition,
+  afEpicReview,
+  afObjectivePreview,
+  afSpendReport,
+} from './tools/af-objective-cycle.js';
 
 const PROJECT_ROOT = process.env['AGENTFORGE_PROJECT_ROOT'] ?? process.cwd();
 
@@ -44,10 +56,23 @@ const PROJECT_ROOT = process.env['AGENTFORGE_PROJECT_ROOT'] ?? process.cwd();
 // Build and register the MCP server
 // ---------------------------------------------------------------------------
 
-const server = new McpServer({
-  name: 'agentforge',
-  version: '10.5.1',
-});
+const server = new McpServer(
+  {
+    name: 'agentforge',
+    version: '10.5.1',
+  },
+  {
+    instructions:
+      'AgentForge MCP server. Drive objective (epic) cycles end-to-end from this session: ' +
+      'size an objective with af_objective_preview (pure math + the exact CLI command — no LLM spend), ' +
+      'inspect a running/completed cycle with af_cycle_status and af_cycle_events, ' +
+      'read the child DAG with af_epic_decomposition, the judgment verdict with af_epic_review, ' +
+      'and the planned-vs-actual spend with af_spend_report. ' +
+      'Per-agent W2 memory is available via af_agent_memory; shared memory and knowledge via ' +
+      'af_memory_query, af_kb_search, and af_kb_lookup. af_agent_invoke dispatches one forged ' +
+      'agent under a hard budget cap.',
+  },
+);
 
 // Tool: af_agent_dispatch
 server.tool(
@@ -269,6 +294,104 @@ server.tool(
   },
   async ({ projectRoot, cycleId, limit }) => {
     const result = afCycleStatus({ projectRoot, cycleId, limit: limit ?? 20 }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_epic_decomposition
+server.tool(
+  'af_epic_decomposition',
+  'Read an objective cycle\'s epic decomposition (.agentforge/cycles/<id>/decomposition.json). ' +
+    'Returns the child DAG summary (id/title/files/estimatedCostUsd/wave/predecessors) ' +
+    'plus the validation-report budget block. Read-only.',
+  {
+    cycleId: z.string().min(8).max(64).describe('Cycle id (.agentforge/cycles/<id>)'),
+  },
+  async ({ cycleId }) => {
+    const result = afEpicDecomposition({ cycleId }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_epic_review
+server.tool(
+  'af_epic_review',
+  'Read an objective cycle\'s epic-review verdict ' +
+    '(.agentforge/cycles/<id>/phases/epic-review.json): verdict, rationale, ' +
+    'faultedItems, triageUsed, costUsd. Read-only.',
+  {
+    cycleId: z.string().min(8).max(64).describe('Cycle id (.agentforge/cycles/<id>)'),
+  },
+  async ({ cycleId }) => {
+    const result = afEpicReview({ cycleId }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_spend_report
+server.tool(
+  'af_spend_report',
+  'Read a cycle\'s planned-vs-actual spend report ' +
+    '(.agentforge/cycles/<id>/spend-report.json) plus a compact totals line. Read-only.',
+  {
+    cycleId: z.string().min(8).max(64).describe('Cycle id (.agentforge/cycles/<id>)'),
+  },
+  async ({ cycleId }) => {
+    const result = afSpendReport({ cycleId }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_agent_memory
+server.tool(
+  'af_agent_memory',
+  'Read an agent\'s personal W2 memory ' +
+    '(.agentforge/memory/agents/<agentId>.jsonl), newest first. Read-only.',
+  {
+    agentId: z.string().min(1).max(64).describe('Forged agent id (e.g. coder, epic-planner)'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional()
+      .default(10)
+      .describe('Maximum entries to return (default: 10)'),
+  },
+  async ({ agentId, limit }) => {
+    const result = afAgentMemory({ agentId, ...(limit !== undefined ? { limit } : {}) }, PROJECT_ROOT);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true }),
+    };
+  },
+);
+
+// Tool: af_objective_preview
+server.tool(
+  'af_objective_preview',
+  'Size an objective cycle WITHOUT spending anything: returns the exact ' +
+    '`agentforge cycle preview --objective … --budget-usd …` command to run, plus the ' +
+    'spendable/band math (spendable=(budget−6)/1.2, band 0.7–1.0×). Pure function — ' +
+    'never spawns LLM work from MCP.',
+  {
+    objective: z.string().min(8).max(8192).describe('Epic objective text to decompose'),
+    budgetUsd: z.number().positive().optional().describe('Planned cycle budget in USD (optional)'),
+  },
+  async ({ objective, budgetUsd }) => {
+    const result = afObjectivePreview({ objective, ...(budgetUsd !== undefined ? { budgetUsd } : {}) });
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
       ...(result.ok ? {} : { isError: true }),

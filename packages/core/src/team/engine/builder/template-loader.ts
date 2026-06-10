@@ -36,7 +36,7 @@ function validateTemplate(raw: unknown, sourcePath: string): AgentTemplate {
   }
 
   const model = (doc.model as string) ?? "sonnet";
-  if (model !== "opus" && model !== "sonnet" && model !== "haiku") {
+  if (model !== "fable" && model !== "opus" && model !== "sonnet" && model !== "haiku") {
     throw new Error(
       `Template "${doc.name}" has invalid model tier "${model}".`,
     );
