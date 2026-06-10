@@ -30,6 +30,8 @@
     fallbackEnabled?: boolean | null;
     tags?: string[];
     dryRun?: boolean | null;
+    epic?: boolean;
+    childCount?: number;
   }
 
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
@@ -159,6 +161,12 @@
 
   function isCodexCli(c: CycleRow): boolean {
     return (c.runtimeMode ?? '').toLowerCase() === 'codex-cli';
+  }
+
+  function epicLabel(c: CycleRow): string {
+    const n = c.childCount ?? 0;
+    if (n <= 0) return 'epic';
+    return `epic · ${n} ${n === 1 ? 'child' : 'children'}`;
   }
 
   function hasCycleConfig(c: CycleRow): boolean {
@@ -474,6 +482,9 @@
                 <div class="cycle-cell">
                   {#if isLive}<PulseDot color="var(--af-purple)" size={5} />{/if}
                   <span class="af2-mono cycle-id">{shortId(c.cycleId)}</span>
+                  {#if c.epic === true}
+                    <span class="epic-pill" title="Objective epic cycle">{epicLabel(c)}</span>
+                  {/if}
                 </div>
                 {#if hasCycleConfig(c)}
                   <div class="config-chips" aria-label="Cycle launch configuration">
@@ -834,6 +845,19 @@
   .col-check input { accent-color: var(--af-purple); cursor: pointer; }
   .cycle-cell { display: inline-flex; align-items: center; gap: 8px; }
   .cycle-id { font-weight: 600; color: var(--af-text); }
+  .epic-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    color: var(--af-purple);
+    background: color-mix(in srgb, var(--af-purple) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--af-purple) 33%, transparent);
+  }
   .config-chips {
     display: flex;
     align-items: center;
