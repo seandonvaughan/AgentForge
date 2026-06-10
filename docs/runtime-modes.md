@@ -1,19 +1,60 @@
 # AgentForge Runtime Modes
 
-AgentForge supports multiple runtime modes across Anthropic SDK, Claude Code
-compatibility, Codex CLI, and OpenAI SDK transports, selected via the
-`AGENTFORGE_RUNTIME` environment variable or the `runtime:` field in
-`.agentforge/autonomous.yaml`.
+AgentForge is **one product with one resolution policy: Claude-first**. You do
+not pick a "mode" to run a cycle — the default (`auto`) lets the per-job router
+decide the provider for every work item, with Claude as the default provider
+for everything. `AGENTFORGE_RUNTIME` still exists, but it is an **escape
+hatch** that pins an entire cycle to one provider family; most operators never
+need to set it.
 
 ---
 
-## Primary modes
+## Claude-first resolution (the default)
+
+Under `auto`, the assign phase calls the per-job routing policy
+(`resolveJobRouting` in `packages/core/src/autonomous/routing/job-router.ts`)
+for every item. The policy is split-tier:
+
+- **Judgment, security, and high-complexity work stays on Claude.** Items
+  matching security markers (`security`, `auth`, `rbac`, `secret`, `token`,
+  `credential`, `crypto`, `vuln`, `cve`), items estimated high-complexity, and
+  items that have already failed repeatedly route to Claude **opus** via the
+  tool-capable Claude transport (`claude-code-compat`), with `anthropic-sdk`
+  as the only alternate. Codex is intentionally **not** in this chain.
+- **Sonnet-tier implementation work (bulk / docs / low-complexity / unmarked
+  items) may ride Codex as auxiliary capacity** — `codex-cli` running
+  `gpt-5.5` at high effort — but **only when the `codex` binary
+  identity-validates**: the resolved binary's `--version` output must look
+  like the real Codex CLI and the CLI must be authenticated. When either check
+  fails, the availability gate drops the decision to the Claude alternates
+  (`claude-code-compat`, then `anthropic-sdk`). Codex is used when available,
+  never required — the product works Claude-only.
+
+The identity probe exists because a wrong binary answering as `codex` on PATH
+has killed cycles mid-run before; a failed probe now degrades the item to
+Claude instead (`packages/core/src/runtime/provider-availability.ts`).
+
+---
+
+## The escape hatch: `AGENTFORGE_RUNTIME`
+
+Setting `AGENTFORGE_RUNTIME` (or `runtime:` in `.agentforge/autonomous.yaml`)
+to anything other than `auto` **pins the whole cycle to that provider
+family**. The forced family's failover chain is restricted to same-family
+transports — forcing a Claude runtime can never dispatch Codex and vice versa
+— while the router's cost-optimized tier/effort per item is preserved (e.g. a
+sonnet-tier item runs claude-sonnet on the Claude family). With `auto`, the
+routed decision is byte-identical to the router's output.
+
+Use it when you must guarantee a transport: CI without the `claude` CLI,
+AgentForge Cloud containers, or local integration testing of one specific
+path.
 
 | Mode | Value | Transport registered | Best for |
 |---|---|---|---|
 | SDK only | `sdk` | `AnthropicSdkTransport` only | AgentForge Cloud, CI, any environment where the `claude` CLI is not installed |
 | CLI only | `cli` | `ClaudeCodeCompatTransport` only | Local Claude Code users who want to guarantee the CLI path |
-| Auto (default) | `auto` | Available transports | Local development and mixed-provider setups; preserves Claude-first routing when possible |
+| Auto (default) | `auto` | Available transports | Everyone else; per-job Claude-first routing as described above |
 
 ## Full `resolveMode()` contract
 
@@ -31,13 +72,15 @@ compatibility, Codex CLI, and OpenAI SDK transports, selected via the
 ### `auto` (default)
 
 `auto` registers the available Anthropic SDK, Claude Code compatibility, Codex
-CLI, and OpenAI SDK transports. The `ProviderResolver` selects one at runtime:
+CLI, and OpenAI SDK transports. At the cycle level, the per-job router (see
+"Claude-first resolution" above) supplies a `providerPreference` chain per
+item; at the transport level the `ProviderResolver` selects one at runtime:
 
 - When `allowedTools` are requested, it first honors a compatible
   `preferredProvider` (`claude-code-compat` or `codex-cli`), then falls back to
   Claude Code compatibility and finally Codex CLI. Tool execution requires one of
   those CLI-backed transports.
-- Otherwise it preserves the historical Claude-first preference by preferring the
+- Otherwise it preserves the Claude-first preference by preferring the
   SDK transport when `ANTHROPIC_API_KEY` is present.
 - Falls back to the CLI transport when the API key is absent but `claude` is on PATH,
   and can route to Codex/OpenAI transports when they are requested explicitly.
