@@ -241,8 +241,9 @@
   });
 
   /** Tier of a server `model` string. Map runtime model/profile IDs to capability tier. */
-  function tierOf(model: string | null | undefined): 'opus' | 'sonnet' | 'haiku' | 'other' {
+  function tierOf(model: string | null | undefined): 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other' {
     const m = (model ?? '').toLowerCase();
+    if (m.includes('fable')) return 'fable';
     if (m.includes('gpt-5.5') || m.includes('xhigh')) return 'opus';
     if (m.includes('gpt-5.3-codex') || m.includes('high')) return 'sonnet';
     if (m.includes('gpt-5.4-mini') || m.includes('medium')) return 'haiku';
@@ -254,6 +255,7 @@
 
   function profileLabel(model: string | null | undefined): string {
     const tier = tierOf(model);
+    if (tier === 'fable') return 'claude-fable-5 / xhigh';
     if (tier === 'opus') return 'gpt-5.5 / xhigh';
     if (tier === 'sonnet') return 'gpt-5.3-codex / high';
     if (tier === 'haiku') return 'gpt-5.4-mini / medium';
@@ -261,8 +263,8 @@
   }
 
   /** Per-tier cost totals derived from costs.byModel. */
-  const tierMix = $derived.by<{ opus: number; sonnet: number; haiku: number; other: number; total: number }>(() => {
-    const mix = { opus: 0, sonnet: 0, haiku: 0, other: 0, total: 0 };
+  const tierMix = $derived.by<{ fable: number; opus: number; sonnet: number; haiku: number; other: number; total: number }>(() => {
+    const mix = { fable: 0, opus: 0, sonnet: 0, haiku: 0, other: 0, total: 0 };
     for (const m of snapshot.costs?.byModel ?? []) {
       const t = tierOf(m.model);
       mix[t] += m.costUsd;
@@ -625,12 +627,20 @@
         <div class="cc-empty">No cost data yet.</div>
       {:else}
         <DistBar segments={[
+          ...(tierMix.fable > 0 ? [{ value: tierMix.fable, color: 'var(--af-fable, var(--af-opus))', label: `fable ${fmtDollar(tierMix.fable)}` }] : []),
           { value: tierMix.opus,   color: 'var(--af-opus)',   label: `xhigh ${fmtDollar(tierMix.opus)}` },
           { value: tierMix.sonnet, color: 'var(--af-sonnet)', label: `high ${fmtDollar(tierMix.sonnet)}` },
           { value: tierMix.haiku,  color: 'var(--af-haiku)',  label: `medium ${fmtDollar(tierMix.haiku)}` },
           ...(tierMix.other > 0 ? [{ value: tierMix.other, color: 'var(--af-dim)', label: `other ${fmtDollar(tierMix.other)}` }] : []),
         ]} h={6} />
         <div class="cc-tier-legend">
+          {#if tierMix.fable > 0}
+            <span>
+              <span class="cc-tier-swatch" style="background:var(--af-fable, var(--af-opus))"></span>
+              <span class="cc-tier-label">fable</span>
+              <span class="font-mono cc-tier-val">{fmtDollar(tierMix.fable)}</span>
+            </span>
+          {/if}
           <span>
             <span class="cc-tier-swatch" style="background:var(--af-opus)"></span>
             <span class="cc-tier-label">xhigh</span>

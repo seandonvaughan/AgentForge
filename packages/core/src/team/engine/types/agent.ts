@@ -8,7 +8,7 @@
 import type { DomainId } from "./domain.js";
 
 /** The Claude model tier an agent runs on. */
-export type ModelTier = "opus" | "sonnet" | "haiku";
+export type ModelTier = "fable" | "opus" | "sonnet" | "haiku";
 
 /**
  * Reasoning effort level for an agent's model invocation.

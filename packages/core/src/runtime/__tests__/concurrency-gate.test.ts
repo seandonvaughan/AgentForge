@@ -194,19 +194,19 @@ describe('ConcurrencyGate', () => {
     delete process.env['TEST_GATE_CAP'];
   });
 
-  // 8. Cap clamps to [1, 40]
-  it('clamps maxParallel: values outside [1,40] are clamped', async () => {
+  // 8. Cap clamps to [1, 64]
+  it('clamps maxParallel: values outside [1,64] are clamped', async () => {
     const low  = new ConcurrencyGate({ maxParallel: 0 });
     const high = new ConcurrencyGate({ maxParallel: 999 });
 
-    // Acquire 40 from high — should all succeed immediately.
+    // Acquire 64 from high — should all succeed immediately (W4 cap raise).
     const highReleases: Array<() => void> = [];
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 64; i++) {
       highReleases.push(await high.acquire());
     }
-    expect(high.getStats().active).toBe(40);
+    expect(high.getStats().active).toBe(64);
 
-    // 41st should queue.
+    // 65th should queue.
     let queued41 = false;
     const p41 = high.acquire().then(() => { queued41 = true; });
     await Promise.resolve();

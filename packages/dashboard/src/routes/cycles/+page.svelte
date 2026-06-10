@@ -70,6 +70,28 @@
     }
   }
 
+  interface PreviewRow {
+    id: string;
+    status: string;
+    title: string;
+    childCount: number;
+    waveCount: number;
+    plannerCostUsd: number;
+    budgetUsd: number | null;
+    withinBand: boolean | null;
+    createdAt: string | null;
+  }
+  let previews = $state<PreviewRow[]>([]);
+
+  async function loadPreviews(): Promise<void> {
+    try {
+      const res = await fetch(withWorkspace('/api/v5/previews'));
+      if (!res.ok) return;
+      const json = (await res.json()) as { previews?: PreviewRow[] };
+      previews = (json.previews ?? []).slice(0, 10);
+    } catch { /* non-fatal — section simply stays hidden */ }
+  }
+
   function hasActive(): boolean {
     return cycles.some((c) => !TERMINAL.has((c.stage ?? '').toLowerCase()));
   }
@@ -271,6 +293,7 @@
 
   onMount(() => {
     void loadCycles();
+    void loadPreviews();
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
@@ -505,6 +528,28 @@
   <div class="muted" style="text-align:center;margin-top:10px;font-size:11px">
     Showing <span class="af2-mono">{filtered.length}</span> cycles · server caps at 200
   </div>
+{/if}
+
+{#if previews.length > 0}
+  <Card style="margin-top:14px">
+    <div class="cc-section-title">OBJECTIVE PREVIEWS</div>
+    <div class="muted" style="font-size:11px;margin-bottom:8px">
+      Rehearsals from <span class="af2-mono">cycle preview --objective</span> — planner + validation only, nothing executed.
+    </div>
+    {#each previews as p (p.id)}
+      <div class="preview-row">
+        <Badge variant={p.status === 'ok' ? 'success' : 'danger'}>{p.status.toUpperCase()}</Badge>
+        <span class="preview-title">{p.title}</span>
+        <span class="af2-mono dim">
+          {p.childCount} children · {p.waveCount} waves
+          {#if p.budgetUsd != null} · ${p.budgetUsd.toFixed(0)} budget{/if}
+          {#if p.withinBand === false} · OUT OF BAND{/if}
+          · planner ${p.plannerCostUsd.toFixed(2)}
+        </span>
+        {#if p.createdAt}<span class="af2-mono dim">{relativeTime(p.createdAt)}</span>{/if}
+      </div>
+    {/each}
+  </Card>
 {/if}
 
 {#if selected.length > 0}
@@ -1027,4 +1072,21 @@
   .cc-metric-label { font-size: 11px; color: var(--af-dim); }
   .cc-best { color: var(--af-success); font-weight: 600; }
   .cc-star { margin-left: 4px; font-size: 9px; }
+
+  .preview-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--af-border);
+    font-size: 12px;
+  }
+  .preview-row:last-child { border-bottom: none; }
+  .preview-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>

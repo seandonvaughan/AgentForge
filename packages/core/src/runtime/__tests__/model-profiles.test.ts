@@ -6,6 +6,16 @@ import { resolveProviderModelProfile, resolveProviderModelProfiles } from '../mo
 
 describe('Codex/OpenAI model profiles', () => {
   it('maps AgentForge tiers to Codex model and effort defaults', () => {
+    // fable mirrors the opus mapping on the OpenAI-family providers — no GPT
+    // tier sits above gpt-5.5/xhigh.
+    expect(resolveProviderModelProfile('codex-cli', 'fable', undefined, {}, '.')).toEqual({
+      modelId: 'gpt-5.5',
+      effort: 'xhigh',
+    });
+    expect(resolveProviderModelProfile('openai-sdk', 'fable', undefined, {}, '.')).toEqual({
+      modelId: 'gpt-5.5',
+      effort: 'xhigh',
+    });
     expect(resolveProviderModelProfile('codex-cli', 'opus', undefined, {}, '.')).toEqual({
       modelId: 'gpt-5.5',
       effort: 'xhigh',
@@ -37,6 +47,18 @@ describe('Codex/OpenAI model profiles', () => {
     expect(profiles['claude-code-compat']).toEqual({
       modelId: 'claude-sonnet-4-6',
       effort: 'high',
+    });
+  });
+
+  it('maps the fable tier to claude-fable-5 on Anthropic providers', () => {
+    const profiles = resolveProviderModelProfiles('fable', 'xhigh', {}, '.');
+    expect(profiles['anthropic-sdk']).toEqual({
+      modelId: 'claude-fable-5',
+      effort: 'xhigh',
+    });
+    expect(profiles['claude-code-compat']).toEqual({
+      modelId: 'claude-fable-5',
+      effort: 'xhigh',
     });
   });
 

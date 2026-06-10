@@ -74,7 +74,7 @@ const UTILITY_AGENT_PATTERNS = [
 function resolveModelTier(
   agentName: string,
   template?: AgentTemplate,
-): "opus" | "sonnet" | "haiku" {
+): "fable" | "opus" | "sonnet" | "haiku" {
   if (template?.model) {
     return template.model;
   }
@@ -188,11 +188,12 @@ function collectAgentsFromDomains(
 function buildModelRouting(
   allAgents: string[],
   templates: Map<DomainId, Map<string, AgentTemplate>>,
-): { routing: ModelRouting; assignments: Record<string, "opus" | "sonnet" | "haiku"> } {
+): { routing: ModelRouting; assignments: Record<string, "fable" | "opus" | "sonnet" | "haiku"> } {
+  const fable: string[] = [];
   const opus: string[] = [];
   const sonnet: string[] = [];
   const haiku: string[] = [];
-  const assignments: Record<string, "opus" | "sonnet" | "haiku"> = {};
+  const assignments: Record<string, "fable" | "opus" | "sonnet" | "haiku"> = {};
 
   for (const agentName of allAgents) {
     // Search all domain template maps for this agent
@@ -209,6 +210,9 @@ function buildModelRouting(
     assignments[agentName] = tier;
 
     switch (tier) {
+      case "fable":
+        fable.push(agentName);
+        break;
       case "opus":
         opus.push(agentName);
         break;
@@ -221,7 +225,7 @@ function buildModelRouting(
   }
 
   return {
-    routing: { opus, sonnet, haiku },
+    routing: { ...(fable.length > 0 ? { fable } : {}), opus, sonnet, haiku },
     assignments,
   };
 }

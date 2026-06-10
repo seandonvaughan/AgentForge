@@ -26,6 +26,13 @@ export interface SpendReportPerItem {
   plannedUsd: number | null;
   actualUsd: number;
   status: string;
+  /** Planner-declared complexity tier — feeds cost-priors calibration. */
+  estimatedComplexity?: 'low' | 'medium' | 'high';
+  /**
+   * actualUsd / plannedUsd, rounded to 2dp. Present only when both sides are
+   * positive. >1 means the estimate was too low; <1 too high.
+   */
+  estimateAccuracy?: number;
 }
 
 export interface SpendReport {
@@ -150,12 +157,21 @@ export function buildSpendReport(args: BuildSpendReportArgs): SpendReport | null
     .filter((i) => i && typeof i.id === 'string')
     .map((i) => {
       const actual = actuals.get(i.id);
+      const plannedUsd = typeof i.estimatedCostUsd === 'number' ? i.estimatedCostUsd : null;
+      const actualUsd = actual?.actualUsd ?? 0;
+      const complexity = i.estimatedComplexity;
       return {
         itemId: i.id as string,
         title: typeof i.title === 'string' ? i.title : '(untitled)',
-        plannedUsd: typeof i.estimatedCostUsd === 'number' ? i.estimatedCostUsd : null,
-        actualUsd: actual?.actualUsd ?? 0,
+        plannedUsd,
+        actualUsd,
         status: actual?.status ?? (typeof i.status === 'string' ? i.status : 'unknown'),
+        ...(complexity === 'low' || complexity === 'medium' || complexity === 'high'
+          ? { estimatedComplexity: complexity }
+          : {}),
+        ...(plannedUsd !== null && plannedUsd > 0 && actualUsd > 0
+          ? { estimateAccuracy: Number((actualUsd / plannedUsd).toFixed(2)) }
+          : {}),
       };
     });
 

@@ -229,7 +229,7 @@ export function applyJobRouting(
 }
 
 function isModelTier(value: unknown): value is ModelTier {
-  return value === 'opus' || value === 'sonnet' || value === 'haiku';
+  return value === 'fable' || value === 'opus' || value === 'sonnet' || value === 'haiku';
 }
 
 /**
@@ -247,12 +247,21 @@ export function applyAdaptiveModel(item: SprintItem, router: AdaptiveRouter): vo
     item.tierReason = undefined;
     return;
   }
+  // The adaptive router learns over the bulk execution tiers only
+  // (opus/sonnet/haiku step-score history). A fable-tier item was routed there
+  // deliberately — never let the cost/quality optimizer re-route it.
+  if (item.tier === 'fable') {
+    item.tierSource = 'policy';
+    item.tierReason = undefined;
+    return;
+  }
   try {
-    const defaultModel: ModelTier = isModelTier(item.tier) ? item.tier : 'sonnet';
+    const defaultModel: Exclude<ModelTier, 'fable'> =
+      isModelTier(item.tier) && item.tier !== 'fable' ? item.tier : 'sonnet';
     const capabilityTag = item.tags?.[0];
     const input: {
       agentId: string;
-      defaultModel: ModelTier;
+      defaultModel: Exclude<ModelTier, 'fable'>;
       capabilityTag?: string;
     } = {
       agentId: item.assignee ?? 'coder',

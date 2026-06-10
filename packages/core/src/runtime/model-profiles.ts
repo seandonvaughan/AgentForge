@@ -20,13 +20,18 @@ export const DEFAULT_CODEX_CLI_MODEL_ID = 'gpt-5.5';
 export const DEFAULT_OPUS_MODEL_ID = 'gpt-5.5';
 export const DEFAULT_HAIKU_MODEL_ID = 'gpt-5.4-mini';
 
+// No GPT tier sits above the opus mapping, so the fable tier reuses it on the
+// OpenAI-family providers; the meaningful failover for fable is the Claude-side
+// chain (fable → opus → sonnet → haiku) in the compat transport.
 const CODEX_DEFAULTS: Record<ModelTier, ProviderModelProfile> = {
+  fable: { modelId: DEFAULT_OPUS_MODEL_ID, effort: 'xhigh' },
   opus: { modelId: DEFAULT_OPUS_MODEL_ID, effort: 'xhigh' },
   sonnet: { modelId: DEFAULT_CODEX_CLI_MODEL_ID, effort: 'high' },
   haiku: { modelId: DEFAULT_HAIKU_MODEL_ID, effort: 'medium' },
 };
 
 const OPENAI_DEFAULTS: Record<ModelTier, ProviderModelProfile> = {
+  fable: { modelId: DEFAULT_OPUS_MODEL_ID, effort: 'xhigh' },
   opus: { modelId: DEFAULT_OPUS_MODEL_ID, effort: 'xhigh' },
   sonnet: { modelId: DEFAULT_CODEX_MODEL_ID, effort: 'high' },
   haiku: { modelId: DEFAULT_HAIKU_MODEL_ID, effort: 'medium' },

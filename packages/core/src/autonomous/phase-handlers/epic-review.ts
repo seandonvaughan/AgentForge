@@ -346,12 +346,15 @@ export async function runEpicReview(
   let costUsd = 0;
   let verdict: EpicReviewVerdict | null = null;
 
-  // ── Primary review call (opus, structured output) ──────────────────────────
+  // ── Primary review call (fable, structured output) ─────────────────────────
+  // The epic review is one of exactly two strong-model calls per epic cycle;
+  // planning/review quality is the leverage point (run 3 lost a full budget to
+  // an ungrounded plan), so it rides the top tier. modelCap still caps it down.
   try {
     const result = await ctx.runtime.run(agentId, task, {
       allowedTools,
       codexSandbox: 'read-only',
-      capabilityTier: 'opus',
+      capabilityTier: 'fable',
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       outputSchema: EPIC_REVIEW_SCHEMA,
     });

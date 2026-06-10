@@ -18,7 +18,7 @@
 import { freemem } from 'node:os';
 
 const DEFAULT_MAX_PARALLEL = 8;
-const HARD_MAX_PARALLEL = 40;
+const HARD_MAX_PARALLEL = 64;
 const DEFAULT_STALE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export interface ConcurrencyGateOptions {

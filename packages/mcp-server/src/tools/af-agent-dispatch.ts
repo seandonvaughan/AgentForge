@@ -22,7 +22,7 @@ export interface AfAgentDispatchResult {
   data: {
     agentId: string;
     ownsSubsystems: string[];
-    recommendedModel: 'opus' | 'sonnet' | 'haiku';
+    recommendedModel: 'fable' | 'opus' | 'sonnet' | 'haiku';
     capabilityTags: string[];
   } | null;
   error: { code: string; message: string } | null;
@@ -40,7 +40,8 @@ interface RoutingIndex {
   agents: RoutingAgent[];
 }
 
-function tierToModel(tier: string | undefined): 'opus' | 'sonnet' | 'haiku' {
+function tierToModel(tier: string | undefined): 'fable' | 'opus' | 'sonnet' | 'haiku' {
+  if (tier === 'fable') return 'fable';
   if (tier === 'opus') return 'opus';
   if (tier === 'haiku') return 'haiku';
   return 'sonnet';

@@ -1,3 +1,5 @@
+fable:
+  - epic-planner
 opus:
   - architect
   - autonomy-strategist
@@ -37,6 +39,11 @@ haiku:
 providers:
   codex-cli:
     tiers:
+      # fable is Claude-served (claude-fable-5); its codex failover profile
+      # mirrors opus — no GPT tier sits above gpt-5.5/xhigh.
+      fable:
+        model: gpt-5.5
+        effort: xhigh
       opus:
         model: gpt-5.5
         effort: xhigh
@@ -48,6 +55,9 @@ providers:
         effort: medium
   openai-sdk:
     tiers:
+      fable:
+        model: gpt-5.5
+        effort: xhigh
       opus:
         model: gpt-5.5
         effort: xhigh

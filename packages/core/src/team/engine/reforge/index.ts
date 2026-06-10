@@ -64,6 +64,7 @@ function allAgentNames(manifest: TeamManifest): string[] {
 
 /** Determine the model tier for an agent within a manifest. */
 function agentModel(manifest: TeamManifest, agentName: string): ModelTier | undefined {
+  if (manifest.model_routing.fable?.includes(agentName)) return "fable";
   if (manifest.model_routing.opus.includes(agentName)) return "opus";
   if (manifest.model_routing.sonnet.includes(agentName)) return "sonnet";
   if (manifest.model_routing.haiku.includes(agentName)) return "haiku";

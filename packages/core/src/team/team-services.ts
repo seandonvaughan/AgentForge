@@ -197,6 +197,9 @@ async function forgeTeamCommand(
     }
 
     console.log('\n--- Model Assignments ---');
+    if ((manifest.model_routing.fable?.length ?? 0) > 0) {
+      console.log(`  Fable:  ${(manifest.model_routing.fable ?? []).join(', ')}`);
+    }
     if (manifest.model_routing.opus.length > 0) {
       console.log(`  Opus:   ${manifest.model_routing.opus.join(', ')}`);
     }
@@ -216,10 +219,11 @@ async function forgeTeamCommand(
 }
 
 function printGenesisTeamSummary(manifest: TeamManifest, domains: string[]): void {
+  const fableCount = manifest.model_routing.fable?.length ?? 0;
   const opusCount = manifest.model_routing.opus.length;
   const sonnetCount = manifest.model_routing.sonnet.length;
   const haikuCount = manifest.model_routing.haiku.length;
-  const totalAgents = opusCount + sonnetCount + haikuCount;
+  const totalAgents = fableCount + opusCount + sonnetCount + haikuCount;
 
   console.log(`  PROPOSED TEAM — ${manifest.name}`);
   console.log('  ───────────────────────────────────\n');

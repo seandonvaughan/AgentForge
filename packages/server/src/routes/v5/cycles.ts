@@ -11,6 +11,7 @@
 // character set. Every file path is resolved with path.resolve and required
 // to start with the cycles base dir so `..` / symlink tricks can't escape.
 
+import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance } from 'fastify';
 import {
   existsSync,
@@ -99,7 +100,14 @@ const SAFE_PHASE = new Set([
   'audit', 'plan', 'assign', 'execute', 'test',
   'review', 'gate', 'release', 'learn',
 ]);
-const CYCLE_PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
+// The nine canonical pipeline phases, in execution order. Drives the
+// dashboard progress bricks — keep epic-review OUT of this list (it is a
+// sub-step of gate on the epic path, not a tenth brick).
+const PIPELINE_PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'gate', 'release', 'learn'] as const;
+// Phase artifacts scanned for agent runs and cost. Includes epic-review:
+// its phases/epic-review.json carries agentRuns (the strong-model reviewer)
+// that were previously invisible in agent stats and cycle cost totals.
+const CYCLE_PHASES = ['audit', 'plan', 'assign', 'execute', 'test', 'review', 'epic-review', 'gate', 'release', 'learn'] as const;
 const TERMINAL_CYCLE_STAGES = new Set(['killed', 'crashed', 'failed', 'completed']);
 /** Per-phase pipeline status for the dashboard cycle-progress bricks. */
 type CycleStageStatus = 'pending' | 'active' | 'done';
@@ -456,20 +464,21 @@ function isTerminalCyclePayload(cycleJson: Record<string, unknown>): boolean {
 }
 
 /**
- * Project a cycle's phase progress into per-phase pipeline status (CYCLE_PHASES
- * order) for the dashboard progress bricks. Prefers the checkpoint's
- * completedPhases/resumeFromPhase; falls back to which phases/<name>.json
- * artifacts exist on disk. A completed cycle is all 'done'; a failed/crashed/
- * killed cycle shows the phases it reached as 'done' with no 'active' brick.
+ * Project a cycle's phase progress into per-phase pipeline status
+ * (PIPELINE_PHASES order) for the dashboard progress bricks. Prefers the
+ * checkpoint's completedPhases/resumeFromPhase; falls back to which
+ * phases/<name>.json artifacts exist on disk. A completed cycle is all 'done';
+ * a failed/crashed/killed cycle shows the phases it reached as 'done' with no
+ * 'active' brick.
  */
 function computeStageStatuses(cycleDir: string, status: string): CycleStageStatus[] {
-  if (status === 'completed') return CYCLE_PHASES.map(() => 'done');
+  if (status === 'completed') return PIPELINE_PHASES.map(() => 'done');
 
   // A phase is 'done' if EITHER it wrote its phases/<name>.json artifact OR the
   // checkpoint lists it as completed — union the two so a phase that produced
   // output is never shown as pending even if the checkpoint pointer regressed.
   const completed = new Set<string>();
-  for (const p of CYCLE_PHASES) {
+  for (const p of PIPELINE_PHASES) {
     if (existsSync(join(cycleDir, 'phases', `${p}.json`))) completed.add(p);
   }
   let current: string | null = null;
@@ -478,12 +487,12 @@ function computeStageStatuses(cycleDir: string, status: string): CycleStageStatu
     for (const p of checkpoint.completedPhases) completed.add(p);
     current = checkpoint.resumeFromPhase;
   }
-  if (!current) current = CYCLE_PHASES.find((p) => !completed.has(p)) ?? null;
+  if (!current) current = PIPELINE_PHASES.find((p) => !completed.has(p)) ?? null;
 
   // failed / crashed / killed: terminal but not completed — no in-flight brick.
   const stalledTerminal = TERMINAL_CYCLE_STAGES.has(status) && status !== 'completed';
 
-  return CYCLE_PHASES.map((phase): CycleStageStatus => {
+  return PIPELINE_PHASES.map((phase): CycleStageStatus => {
     if (completed.has(phase)) return 'done';
     if (!stalledTerminal && phase === current) return 'active';
     return 'pending';
@@ -1058,6 +1067,85 @@ export async function cyclesRoutes(
     }
     rows.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0));
     return reply.send({ cycles: rows.slice(0, limit) });
+  });
+
+  // GET /api/v5/previews ──────────────────────────────────────────────────
+  // Lists objective rehearsals from `agentforge cycle preview --objective`
+  // (.agentforge/previews/<dir>/preview.json). Read-only; previews are not
+  // cycles and deliberately live outside .agentforge/cycles/.
+  // Register @fastify/rate-limit once per server instance; re-registration
+  // from another route module is a guarded no-op (cycle-prs.ts pattern).
+  try {
+    await app.register(rateLimit, {
+      global: false,
+      max: 60,
+      timeWindow: '1 minute',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/already registered/i.test(msg)) throw err;
+  }
+
+  app.get(
+    '/api/v5/previews',
+    {
+      config: {
+        // 60 req/min per remote address — reads every preview artifact on
+        // disk. Recognized by CodeQL js/missing-rate-limiting.
+        rateLimit: { max: 60, timeWindow: '1 minute' },
+      },
+    },
+    async (_req, reply) => {
+    const base = resolve(join(opts.projectRoot, '.agentforge', 'previews'));
+    if (!existsSync(base)) return reply.send({ previews: [] });
+
+    interface PreviewRow {
+      id: string;
+      status: string;
+      title: string;
+      childCount: number;
+      waveCount: number;
+      plannerCostUsd: number;
+      budgetUsd: number | null;
+      withinBand: boolean | null;
+      createdAt: string | null;
+    }
+    const rows: PreviewRow[] = [];
+    let names: string[];
+    try {
+      names = readdirSync(base);
+    } catch {
+      return reply.send({ previews: [] });
+    }
+    for (const name of names) {
+      if (!SAFE_ID.test(name)) continue;
+      const file = join(base, name, 'preview.json');
+      if (!existsSync(file)) continue;
+      try {
+        const p = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+        const objective = (p['objective'] ?? {}) as Record<string, unknown>;
+        const plan = (p['plan'] ?? null) as Record<string, unknown> | null;
+        const report = (p['report'] ?? null) as Record<string, unknown> | null;
+        const budget = (report?.['budget'] ?? null) as Record<string, unknown> | null;
+        rows.push({
+          id: name,
+          status: typeof p['status'] === 'string' ? (p['status'] as string) : 'unknown',
+          title: typeof objective['title'] === 'string' ? (objective['title'] as string) : name,
+          childCount: Array.isArray(plan?.['children']) ? (plan['children'] as unknown[]).length : 0,
+          waveCount: typeof report?.['waveCount'] === 'number' ? (report['waveCount'] as number) : 0,
+          plannerCostUsd: typeof p['plannerCostUsd'] === 'number' ? (p['plannerCostUsd'] as number) : 0,
+          budgetUsd: typeof budget?.['budgetUsd'] === 'number' ? (budget['budgetUsd'] as number) : null,
+          withinBand: typeof budget?.['withinBand'] === 'boolean' ? (budget['withinBand'] as boolean) : null,
+          createdAt: typeof objective['createdAt'] === 'string' ? (objective['createdAt'] as string) : null,
+        });
+      } catch { /* skip unparseable */ }
+    }
+    rows.sort((a, b) => {
+      const ka = a.createdAt ?? a.id;
+      const kb = b.createdAt ?? b.id;
+      return ka < kb ? 1 : ka > kb ? -1 : 0;
+    });
+    return reply.send({ previews: rows });
   });
 
   // GET /api/v5/cycles/:id ──────────────────────────────────────────────────

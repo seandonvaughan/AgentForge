@@ -42,8 +42,9 @@ import {
   getWorkspace,
   getDefaultWorkspace,
   readCheckpoint,
+  previewObjective,
 } from '@agentforge/core';
-import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext, CycleConfig, CycleLogger as CycleLoggerType } from '@agentforge/core';
+import type { MessageTopic, MessageEnvelopeV2, CycleResult, PhaseName, PhaseHandler, PhaseContext, CycleConfig, CycleLogger as CycleLoggerType, PreviewObjectiveResult } from '@agentforge/core';
 
 interface WorkspaceAwareOptions {
   projectRoot: string;
@@ -73,6 +74,7 @@ interface CycleRunOptions extends WorkspaceAwareOptions {
 interface CyclePreviewOptions extends WorkspaceAwareOptions {
   budgetUsd?: string;
   maxItems?: string;
+  objective?: string;
   json?: boolean;
   fastMode?: boolean;
   modelCap?: string;
@@ -243,7 +245,7 @@ interface PrMergeAssessment {
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const CYCLE_STAGE_FILTER_RE = /^[a-z][a-z0-9_-]*$/;
-type ModelCap = 'opus' | 'sonnet' | 'haiku';
+type ModelCap = 'fable' | 'opus' | 'sonnet' | 'haiku';
 type EffortCap = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 interface CycleLaunchControls {
@@ -273,8 +275,9 @@ export function registerCycleCommand(program: Command): void {
     .option('--json', 'Print machine-readable JSON')
     .option('--budget-usd <usd>', 'Override per-cycle budget for preview only')
     .option('--max-items <count>', 'Override max sprint items for preview only')
+    .option('--objective <text>', 'Preview the epic decomposition of an objective (planner + validation only — no cycle, no git, no execution)')
     .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
-    .option('--model-cap <tier>', 'Cap Codex model tier: opus, sonnet, or haiku')
+    .option('--model-cap <tier>', 'Cap Codex model tier: fable, opus, sonnet, or haiku')
     .option('--effort-cap <effort>', 'Cap Codex effort: low, medium, high, xhigh, or max')
     .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
     .option('--fallback', 'Enable runtime fallback for this preview')
@@ -383,7 +386,7 @@ function registerCycleRunCommand(parent: Command, commandName: string, descripti
     .option('--resume <cycleId>', 'Resume a previously-checkpointed cycle by id')
     .option('--cycle-name <name>', 'Optional display name for this cycle')
     .option('--fast-mode', 'Use the fast parallel launch preset (defaults effort cap to high unless --effort-cap is set)')
-    .option('--model-cap <tier>', 'Cap Codex model tier: opus, sonnet, or haiku')
+    .option('--model-cap <tier>', 'Cap Codex model tier: fable, opus, sonnet, or haiku')
     .option('--effort-cap <effort>', 'Cap Codex effort: low, medium, high, xhigh, or max')
     .option('--max-agents <count>', 'Override maximum execute-phase parallel agents')
     .option('--fallback', 'Enable runtime fallback for this cycle')
@@ -585,6 +588,8 @@ async function runCycleAction(opts: CycleRunOptions): Promise<void> {
           ...(config.testing.knownFlakyTestFiles !== undefined
             ? { childVerifyExcludeTestFiles: config.testing.knownFlakyTestFiles }
             : {}),
+          // W5 — preserve failed children's worktrees as diagnostic branches.
+          includeDiagnosticBranchOnFailure: config.git.includeDiagnosticBranchOnFailure,
         }),
         test: (ctx: PhaseContext) => runTestPhase(ctx),
         review: (ctx: PhaseContext) => runReviewPhase(ctx),
@@ -693,6 +698,16 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
     return;
   }
 
+  // Objective mode (spec 2026-05-30 §13 m3): rehearse the epic decomposition —
+  // planner + deterministic validation only, no cycle, no git, no execution.
+  if (typeof opts.objective === 'string' && opts.objective.trim().length > 0) {
+    if (maxItems !== undefined) {
+      console.warn('[cycle preview] --max-items is ignored in --objective mode');
+    }
+    await runObjectivePreviewAction(projectRoot, opts, budgetUsd, launchControls);
+    return;
+  }
+
   try {
     const preview = await runCyclePreview({
       projectRoot,
@@ -761,6 +776,113 @@ async function runCyclePreviewAction(opts: CyclePreviewOptions): Promise<void> {
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
+  }
+}
+
+async function runObjectivePreviewAction(
+  projectRoot: string,
+  opts: CyclePreviewOptions,
+  budgetUsd: number | undefined,
+  launchControls: CycleLaunchControls,
+): Promise<void> {
+  try {
+    const config = loadCycleConfig(projectRoot);
+    applyCycleLaunchControls(config, launchControls, '[cycle preview]');
+    // Same budget source the run path threads into ctx.budgetUsd; the
+    // explicit --budget-usd flag wins.
+    const effectiveBudget = budgetUsd ?? config.budget.perCycleUsd;
+
+    // The same runtime the run path uses for the decompose call — observed-cost
+    // calibration comes from projectRoot inside previewObjective.
+    const runtime = new RuntimeAdapter({
+      cwd: projectRoot,
+      ...(config.modelCap ? { modelCap: config.modelCap } : {}),
+      ...(config.effortCap ? { effortCap: config.effortCap } : {}),
+      enableFallback: launchControls.fallbackEnabled ?? true,
+    });
+
+    const result = await previewObjective(
+      {
+        projectRoot,
+        objective: opts.objective!.trim(),
+        ...(effectiveBudget > 0 ? { budgetUsd: effectiveBudget } : {}),
+      },
+      runtime,
+    );
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printObjectivePreview(result);
+    }
+    if (result.status === 'invalid') {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
+
+function printObjectivePreview(result: PreviewObjectiveResult): void {
+  console.log(`Epic:         ${result.objective.id} — ${result.objective.title}`);
+  if (result.report?.budget) {
+    const b = result.report.budget;
+    console.log(`Budget:       $${b.budgetUsd.toFixed(2)} (spendable $${b.spendableUsd.toFixed(2)})`);
+    console.log(
+      `Plan cost:    $${b.sumUsd.toFixed(2)} — band [$${b.lowerUsd.toFixed(2)}, $${b.upperUsd.toFixed(2)}] ${b.withinBand ? 'OK' : 'OUT OF BAND'}`,
+    );
+  }
+
+  if (result.status === 'invalid') {
+    console.log('');
+    console.log(`INVALID (${result.error?.reason}): ${result.error?.message}`);
+    if (result.report?.cycle && result.report.cycle.length > 0) {
+      console.log(`Cycle:        ${result.report.cycle.join(' -> ')}`);
+    }
+    for (const missing of result.report?.missingPredecessors ?? []) {
+      console.log(`Missing pred: ${missing.childId} needs ${missing.missing.join(', ')}`);
+    }
+    console.log(`Planner cost: $${result.plannerCostUsd.toFixed(2)}`);
+    return;
+  }
+
+  const plan = result.plan!;
+  console.log(`Children:     ${plan.children.length}  Waves: ${result.summary?.waveCount ?? 0}  Critical path: ${result.criticalPathLength ?? 0}  Max wave width: ${result.summary?.maxWaveWidth ?? 0}`);
+  console.log('');
+  console.log('Children:');
+  for (const child of plan.children) {
+    const preds = child.predecessors.length > 0 ? `  after: ${child.predecessors.join(', ')}` : '';
+    console.log(`  [w${child.wave ?? 0}] ${child.id}  ${child.title}`);
+    console.log(`       est=$${child.estimatedCostUsd.toFixed(2)}  complexity=${child.estimatedComplexity}  assignee=${child.suggestedAssignee}${preds}`);
+  }
+
+  console.log('');
+  console.log('Waves:');
+  for (const wave of result.waves) {
+    console.log(`  Wave ${wave.wave} (${wave.childIds.length} items, $${wave.estCostUsd.toFixed(2)}): ${wave.childIds.join(', ')}`);
+  }
+
+  if (result.fileOverlaps.length > 0) {
+    console.log('');
+    console.log('File overlaps (forced ordering):');
+    for (const edge of result.fileOverlaps) {
+      console.log(`  ${edge.from} -> ${edge.to}  (${edge.sharedFiles.join(', ')})`);
+    }
+  }
+
+  if (result.warnings.length > 0) {
+    console.log('');
+    console.log('Warnings:');
+    for (const warning of result.warnings) {
+      console.log(`  - ${warning}`);
+    }
+  }
+
+  console.log('');
+  console.log(`Planner cost: $${result.plannerCostUsd.toFixed(2)}${result.repaired ? '  (one repair retry)' : ''}`);
+  if (result.artifactDir) {
+    console.log(`Artifacts:    ${result.artifactDir}`);
   }
 }
 
@@ -2025,7 +2147,7 @@ function applyCycleLaunchControls(
 
 function parseModelCap(raw: string | undefined): ModelCap | undefined | null {
   if (raw === undefined || raw === '') return undefined;
-  return raw === 'opus' || raw === 'sonnet' || raw === 'haiku' ? raw : null;
+  return raw === 'fable' || raw === 'opus' || raw === 'sonnet' || raw === 'haiku' ? raw : null;
 }
 
 function parseEffortCap(raw: string | undefined): EffortCap | undefined | null {

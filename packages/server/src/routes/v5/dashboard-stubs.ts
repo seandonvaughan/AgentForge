@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { createReadStream, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
@@ -81,11 +82,31 @@ function buildMemoryKey(type: string, parsedValue: unknown): string {
  * backend implementations yet. These provide sensible defaults and read
  * from file-based data where available.
  */
+// Per-IP rate-limit for the filesystem-backed memory routes below
+// (CodeQL js/missing-rate-limiting). Mirrors cycle-prs.ts.
+const RATE_LIMIT_MAX = 60;
+const RATE_LIMIT_WINDOW = '1 minute';
+
 export async function dashboardStubRoutes(
   app: FastifyInstance,
   opts: { projectRoot?: string } = {},
 ): Promise<void> {
   const projectRoot = opts.projectRoot ?? process.cwd();
+
+  // Register @fastify/rate-limit once per server instance. Catching the
+  // "already registered" error makes the standard adapter + no-adapter
+  // dual-registration pattern a no-op on the second call (cycle-prs.ts
+  // pattern).
+  try {
+    await app.register(rateLimit, {
+      global: false, // attached per-route below
+      max: RATE_LIMIT_MAX,
+      timeWindow: RATE_LIMIT_WINDOW,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.toLowerCase().includes('already registered')) throw err;
+  }
 
   // ── Flywheel metrics ──────────────────────────────────────────────────────
   // v6.7.4 review fix: the underlying computeFlywheelMetrics() does ~50 sync
@@ -135,7 +156,13 @@ export async function dashboardStubRoutes(
   //     meta: { total: number, limit: number } }
   const MEMORY_LIMIT = 200;
 
-  app.get('/api/v5/memory', async (req, reply) => {
+  app.get('/api/v5/memory', {
+    config: {
+      // 60 req/min per remote address — this handler does query-driven
+      // filesystem reads. Recognized by CodeQL js/missing-rate-limiting.
+      rateLimit: { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW },
+    },
+  }, async (req, reply) => {
     const q = req.query as {
       type?: string;
       since?: string;
@@ -246,6 +273,48 @@ export async function dashboardStubRoutes(
             } catch { /* skip malformed line */ }
           }
         } catch { /* skip unreadable file */ }
+      }
+
+      // ── Per-agent personal memory (W2): memory/agents/<agentId>.jsonl ────
+      // Surfaced with type 'agent-memory' and agentId derived from the
+      // filename so the agent detail page's existing agentId filter picks
+      // these up with zero UI changes.
+      const agentsMemDir = join(memoryDir, 'agents');
+      if (existsSync(agentsMemDir)) {
+        for (const file of readdirSync(agentsMemDir)) {
+          if (!file.endsWith('.jsonl')) continue;
+          const ownerAgentId = file.replace(/\.jsonl$/, '');
+          try {
+            const content = readFileSync(join(agentsMemDir, file), 'utf-8');
+            for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const entry = JSON.parse(trimmed) as {
+                  id?: string;
+                  kind?: string;
+                  value?: string;
+                  createdAt?: string;
+                  itemId?: string;
+                  cycleId?: string;
+                  outcome?: string;
+                  tags?: string[];
+                };
+                entries.push({
+                  id: entry.id ?? `${file}-${entries.length}`,
+                  key: `${ownerAgentId} · ${entry.kind ?? 'note'}`,
+                  value: entry.value ?? '',
+                  type: 'agent-memory',
+                  createdAt: entry.createdAt ?? new Date().toISOString(),
+                  agentId: ownerAgentId,
+                  source: ownerAgentId,
+                  ...(typeof entry.value === 'string' ? { summary: entry.value.slice(0, 160) } : {}),
+                  ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+                });
+              } catch { /* skip malformed line */ }
+            }
+          } catch { /* skip unreadable file */ }
+        }
       }
 
       // ── Legacy JSON / Markdown files (fallback for older data) ───────────
@@ -391,7 +460,13 @@ export async function dashboardStubRoutes(
   //
   // Response: Content-Type: application/x-ndjson; one JSON object per line.
   //           HTTP 200 with an empty body when no entries match.
-  app.get('/api/v5/memory/stream', async (req, reply) => {
+  app.get('/api/v5/memory/stream', {
+    config: {
+      // Same FS-read class as /api/v5/memory — limit it too rather than
+      // waiting for the next CodeQL pass to flag it.
+      rateLimit: { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW },
+    },
+  }, async (req, reply) => {
     const q = req.query as {
       search?:  string;
       type?:    string;

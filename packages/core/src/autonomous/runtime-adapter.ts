@@ -33,7 +33,7 @@ import {
   type CostBreakdown,
 } from './cost-breakdown.js';
 
-const TIER_RANK: Record<ModelTier, number> = { opus: 2, sonnet: 1, haiku: 0 };
+const TIER_RANK: Record<ModelTier, number> = { fable: 3, opus: 2, sonnet: 1, haiku: 0 };
 
 /**
  * Default provider failover chain for calls that carry no explicit routing
@@ -95,12 +95,13 @@ export function cappedCallTier(requested: ModelTier, modelCap: ModelTier | undef
 }
 
 /**
- * xhigh effort is only supported on Opus. For Sonnet/Haiku, max is the
- * highest available level — coerce xhigh down to max for non-Opus tiers.
+ * xhigh effort is only supported on the Fable and Opus tiers. For
+ * Sonnet/Haiku, max is the highest available level — coerce xhigh down to
+ * max for the lower tiers.
  */
 function resolveEffort(requestedEffort: string | undefined, model: ModelTier): string | undefined {
   if (!requestedEffort) return undefined;
-  if (requestedEffort === 'xhigh' && model !== 'opus') return 'max';
+  if (requestedEffort === 'xhigh' && model !== 'opus' && model !== 'fable') return 'max';
   return requestedEffort;
 }
 

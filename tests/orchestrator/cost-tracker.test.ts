@@ -33,23 +33,23 @@ describe("cost-tracker", () => {
     });
 
     it("should calculate opus pricing correctly", () => {
-      // Opus: input $15/M, output $75/M
+      // Opus: input $5/M, output $25/M (canonical 2026-06 pricing)
       tracker.recordUsage("architect", "opus", 1_000_000, 1_000_000);
 
       const report = tracker.getReport();
 
-      // 1M * $15 + 1M * $75 = $90
-      expect(report.usages[0].estimated_cost_usd).toBe(90);
+      // 1M * $5 + 1M * $25 = $30
+      expect(report.usages[0].estimated_cost_usd).toBe(30);
     });
 
     it("should calculate haiku pricing correctly", () => {
-      // Haiku: input $0.25/M, output $1.25/M
+      // Haiku: input $1/M, output $5/M (canonical 2026-06 pricing)
       tracker.recordUsage("file-reader", "haiku", 1_000_000, 1_000_000);
 
       const report = tracker.getReport();
 
-      // 1M * $0.25 + 1M * $1.25 = $1.50
-      expect(report.usages[0].estimated_cost_usd).toBe(1.5);
+      // 1M * $1 + 1M * $5 = $6
+      expect(report.usages[0].estimated_cost_usd).toBe(6);
     });
   });
 
@@ -112,7 +112,7 @@ describe("cost-tracker", () => {
       tracker.recordUsage("architect", "opus", 1_000_000, 0);
 
       expect(tracker.getAgentCost("coder")).toBe(3);
-      expect(tracker.getAgentCost("architect")).toBe(15);
+      expect(tracker.getAgentCost("architect")).toBe(5);
     });
 
     it("should return 0 for unknown agent", () => {

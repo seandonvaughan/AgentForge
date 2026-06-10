@@ -19,7 +19,7 @@ export interface RoutingIndexAgent {
   id: string;
   capability_tags: string[];
   owns_subsystems: string[];
-  tier: 'opus' | 'sonnet' | 'haiku';
+  tier: 'fable' | 'opus' | 'sonnet' | 'haiku';
   /** Tag-specificity weight used as tie-breaker during routing. Higher = more specific. */
   priority: number;
 }
@@ -44,9 +44,10 @@ function asStringArray(value: unknown): string[] {
 // Tier detection
 // ---------------------------------------------------------------------------
 
-function parseTier(raw: string | undefined): 'opus' | 'sonnet' | 'haiku' {
+function parseTier(raw: string | undefined): 'fable' | 'opus' | 'sonnet' | 'haiku' {
   if (!raw) return 'sonnet';
   const t = raw.toLowerCase();
+  if (t.includes('fable')) return 'fable';
   if (t.includes('opus')) return 'opus';
   if (t.includes('haiku')) return 'haiku';
   return 'sonnet';

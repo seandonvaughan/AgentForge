@@ -33,11 +33,12 @@ agents:
     - file-reader
     - pr-merge-manager
 model_routing:
+  fable:
+    - epic-planner
   opus:
     - chief-architect
     - forge-engine-architect
     - autonomy-strategist
-    - epic-planner
   sonnet:
     - fastify-v5-engineer
     - fastify-v6-shim-engineer

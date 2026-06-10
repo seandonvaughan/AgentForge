@@ -19,6 +19,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { WorkspaceAdapter } from '@agentforge/db';
 import { injectAgentDms, type InjectAgentDmsOptions } from '../comms/inject-agent-dms.js';
+import { readAgentMemoryFromDir } from '../memory/agent-memory.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -164,17 +165,36 @@ export function buildFreshContextBlock(
   agentforgeDir: string,
   options: FreshContextOptions = {},
 ): string {
-  const maxEntries = options.maxEntries ?? 5;
   const maxChars = options.maxEntryChars ?? 220;
   const windowDays = options.windowDays ?? 60;
-
   const memDir = join(agentforgeDir, 'memory');
-  const entries = loadEntries(memDir);
-  if (entries.length === 0) return '';
 
+  // W2 — the agent's OWN history comes first: distilled outcomes of its prior
+  // items plus its own LEARNED notes, from .agentforge/memory/agents/<id>.jsonl.
+  // When personal history exists, the shared role-filtered pool shrinks to
+  // make room (the personal slice is strictly more relevant).
+  const personal = readAgentMemoryFromDir(memDir, agentId, 5);
+  const personalBullets = personal.map((e) => {
+    const clean = e.value.replace(/\s+/g, ' ').trim();
+    return clean.length > maxChars ? `- ${clean.slice(0, maxChars - 1)}…` : `- ${clean}`;
+  });
+  const maxEntries = options.maxEntries ?? (personal.length > 0 ? 3 : 5);
+
+  const sections: string[] = [];
+  if (personalBullets.length > 0) {
+    sections.push(
+      [
+        '## Your history',
+        'Outcomes of your own recent work and notes you recorded. Apply them.',
+        '',
+        personalBullets.join('\n'),
+      ].join('\n'),
+    );
+  }
+
+  const entries = loadEntries(memDir);
   const affinity = agentRuntimeTags(agentId);
   const recent = entries.filter((e) => withinWindow(e.createdAt, windowDays));
-  if (recent.length === 0) return '';
 
   const scored = recent
     .map((e) => ({ e, score: rankRuntimeEntry(e, affinity) }))
@@ -183,20 +203,24 @@ export function buildFreshContextBlock(
       if (b.score !== a.score) return b.score - a.score;
       return new Date(b.e.createdAt).getTime() - new Date(a.e.createdAt).getTime();
     });
-  if (scored.length === 0) return '';
 
-  const bullets = scored.slice(0, maxEntries).map(({ e }) => {
-    const clean = e.value.replace(/\s+/g, ' ').replace(/^[*-]\s*/, '').trim();
-    return clean.length > maxChars ? `- ${clean.slice(0, maxChars - 1)}…` : `- ${clean}`;
-  });
+  if (scored.length > 0) {
+    const bullets = scored.slice(0, maxEntries).map(({ e }) => {
+      const clean = e.value.replace(/\s+/g, ' ').replace(/^[*-]\s*/, '').trim();
+      return clean.length > maxChars ? `- ${clean.slice(0, maxChars - 1)}…` : `- ${clean}`;
+    });
+    sections.push(
+      [
+        '## Fresh Context (this cycle)',
+        'The notes below are the most-recent relevant memory entries for your role.',
+        'Treat them as live signal — what just happened across the team.',
+        '',
+        bullets.join('\n'),
+      ].join('\n'),
+    );
+  }
 
-  return [
-    '## Fresh Context (this cycle)',
-    'The notes below are the most-recent relevant memory entries for your role.',
-    'Treat them as live signal — what just happened across the team.',
-    '',
-    bullets.join('\n'),
-  ].join('\n');
+  return sections.join('\n\n');
 }
 
 /**

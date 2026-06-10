@@ -193,6 +193,127 @@ describe('execute-phase progress events', () => {
     expect(typeof payload.parallelism).toBe('number');
     expect(Array.isArray(payload.failedItems)).toBe(true);
   });
+
+  it('snapshots a running entry with startedAt while the item executes, and preserves startedAt on the terminal result', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Task A', assignee: 'agent-1' },
+    ]);
+
+    const bus = makeBus();
+    const execJsonPath = join(tmpRoot, '.agentforge', 'cycles', 'cycle-test-1', 'phases', 'execute.json');
+    // Capture the incremental snapshot at the moment the agent is running.
+    let midRunSnapshot: any = null;
+    const ctx = makeCtx(bus, {
+      cycleId: 'cycle-test-1',
+      runtime: {
+        run: vi.fn().mockImplementation(async () => {
+          const { readFileSync } = await import('node:fs');
+          midRunSnapshot = JSON.parse(readFileSync(execJsonPath, 'utf8'));
+          return { output: 'done', costUsd: 0.01, status: 'completed' };
+        }),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx);
+
+    // Mid-run: the live snapshot shows the item as running with a startedAt.
+    expect(midRunSnapshot).not.toBeNull();
+    const runningRow = (midRunSnapshot.itemResults as any[]).find((r) => r.itemId === 'item-1');
+    expect(runningRow.status).toBe('running');
+    expect(runningRow.agentId).toBe('agent-1');
+    expect(new Date(runningRow.startedAt).getTime()).toBeGreaterThan(0);
+
+    // Terminal: startedAt is preserved on the completed result.
+    const { readFileSync } = await import('node:fs');
+    const final = JSON.parse(readFileSync(execJsonPath, 'utf8'));
+    const finalRow = (final.itemResults as any[]).find((r) => r.itemId === 'item-1');
+    expect(finalRow.status).toBe('completed');
+    expect(finalRow.startedAt).toBe(runningRow.startedAt);
+    expect(finalRow.agentId).toBe('agent-1');
+  });
+
+  it('W2: writes a distilled item-outcome + LEARNED notes to the assignee\'s personal memory', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Wire the widget', assignee: 'coder' },
+    ]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus, {
+      runtime: {
+        run: vi.fn().mockResolvedValue({
+          output: 'All done.\nLEARNED: the widget registry rejects duplicate slugs silently\n',
+          costUsd: 0.25,
+          status: 'completed',
+        }),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx);
+
+    const { readAgentMemory } = await import('../../../memory/agent-memory.js');
+    const entries = readAgentMemory(tmpRoot, 'coder', 10);
+    const outcome = entries.find((e) => e.kind === 'item-outcome');
+    const note = entries.find((e) => e.kind === 'self-note');
+    expect(outcome).toBeDefined();
+    expect(outcome!.value).toContain('completed "Wire the widget"');
+    expect(outcome!.outcome).toBe('completed');
+    expect(outcome!.itemId).toBe('item-1');
+    expect(note).toBeDefined();
+    expect(note!.value).toContain('duplicate slugs');
+  });
+
+  it('W1: splices task-relevant knowledge-base notes into the item prompt', async () => {
+    const { writeKnowledgeEntry } = await import('../../../knowledge/persistence.js');
+    writeKnowledgeEntry(tmpRoot, {
+      text: 'The widget registry rejects duplicate slugs silently — always check the return value.',
+      source: 'review',
+    });
+    writeSprintFile([
+      { id: 'item-1', title: 'Extend the widget registry', assignee: 'coder', description: 'add slugs support to registry' },
+    ]);
+
+    const prompts: string[] = [];
+    const bus = makeBus();
+    const ctx = makeCtx(bus, {
+      runtime: {
+        run: vi.fn().mockImplementation(async (_agent: string, task: string) => {
+          prompts.push(task);
+          return { output: 'done', costUsd: 0.01, status: 'completed' };
+        }),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx);
+
+    expect(prompts[0]).toContain('## Project knowledge');
+    expect(prompts[0]).toContain('duplicate slugs');
+  });
+
+  it('W2: records failures with an error excerpt in the assignee\'s personal memory', async () => {
+    writeSprintFile([
+      { id: 'item-1', title: 'Doomed task', assignee: 'coder' },
+    ]);
+
+    const bus = makeBus();
+    const ctx = makeCtx(bus, {
+      runtime: {
+        run: vi.fn().mockRejectedValue(new Error('TS2339: property does not exist on type Widget')),
+      } as any,
+    });
+
+    const { runExecutePhase } = await import('../execute-phase.js');
+    await runExecutePhase(ctx, { maxItemRetries: 0 });
+
+    const { readAgentMemory } = await import('../../../memory/agent-memory.js');
+    const entries = readAgentMemory(tmpRoot, 'coder', 10);
+    const outcome = entries.find((e) => e.kind === 'item-outcome');
+    expect(outcome).toBeDefined();
+    expect(outcome!.outcome).toBe('failed');
+    expect(outcome!.value).toContain('TS2339');
+  });
 });
 
 // ---------------------------------------------------------------------------

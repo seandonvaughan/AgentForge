@@ -4,7 +4,7 @@ import { api } from '$api/client.js';
 export interface Agent {
   agentId: string;
   name: string;
-  model: 'opus' | 'sonnet' | 'haiku';
+  model: 'fable' | 'opus' | 'sonnet' | 'haiku';
   description?: string | null;
   systemPrompt?: string;
   skills?: string[];
@@ -23,6 +23,7 @@ export const agentsLoading = writable(false);
 export const agentsError = writable<string | null>(null);
 
 export const agentsByModel = derived(agents, $agents => ({
+  fable: $agents.filter(a => a.model === 'fable'),
   opus: $agents.filter(a => a.model === 'opus'),
   sonnet: $agents.filter(a => a.model === 'sonnet'),
   haiku: $agents.filter(a => a.model === 'haiku'),

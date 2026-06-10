@@ -37,7 +37,7 @@ import { AgentOutputSchemaSchema } from "../../agent-yaml/agent-yaml-schema.js";
 
 export const TeamPlanAgentSchema = z.object({
   id: z.string().min(1).regex(/^[a-z0-9-]+$/, "id must be kebab-case"),
-  tier: z.enum(["opus", "sonnet", "haiku"]),
+  tier: z.enum(["fable", "opus", "sonnet", "haiku"]),
   category: z.enum(["strategic", "implementation", "quality", "utility"]),
   owns_subsystems: z.array(z.string()),
   capability_tags: z.array(z.string().min(1)),
@@ -249,10 +249,11 @@ async function writeAtomic(
 }
 
 /** Map an agent tier to its default reasoning-effort level. */
-function defaultEffortFor(tier: "opus" | "sonnet" | "haiku"): string {
-  // Opus runs at the highest effort by default (deep architecture / strategy
-  // work). Sonnet defaults to high (most engineers). Haiku stays at medium —
-  // it's used for utility/filter agents where xhigh is wasteful.
+function defaultEffortFor(tier: "fable" | "opus" | "sonnet" | "haiku"): string {
+  // Fable and Opus run at the highest effort by default (deep architecture /
+  // strategy work). Sonnet defaults to high (most engineers). Haiku stays at
+  // medium — it's used for utility/filter agents where xhigh is wasteful.
+  if (tier === "fable") return "xhigh";
   if (tier === "opus") return "xhigh";
   if (tier === "sonnet") return "high";
   return "medium";

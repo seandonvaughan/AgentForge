@@ -1,5 +1,5 @@
 name: epic-planner
-model: opus
+model: fable
 version: '1.0'
 description: epic-decomposition, dependency-dag, wave-scheduling, task-breakdown, campaign-planning
 system_prompt: >

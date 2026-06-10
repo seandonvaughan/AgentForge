@@ -31,7 +31,7 @@ export interface ValidationResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-const VALID_MODELS = new Set(["opus", "sonnet", "haiku"]);
+const VALID_MODELS = new Set(["fable", "opus", "sonnet", "haiku"]);
 const REQUIRED_FIELDS = ["name", "model", "system_prompt"] as const;
 
 // ---------------------------------------------------------------------------
