@@ -509,7 +509,8 @@ gh auth login
 | `agentforge team forge` (agent-driven, first run) | ~$2.80 |
 | `agentforge team forge` (incremental reforge, 2-5 agents) | $0.20 – $0.60 |
 | `agentforge cycle preview --objective` (rehearsal) | $0.50 – $2 |
-| `agentforge cycle run --objective` (small feature) | $20 – $50 |
+| `agentforge cycle run --objective` (small feature) | $15 – $30 |
+| `agentforge cycle run --objective` (medium feature) | $30 – $50 |
 | `agentforge cycle run --objective` (large feature/refactor) | $50 – $300 |
 
 Costs are denominated in USD against published API pricing. In objective mode
