@@ -124,10 +124,15 @@ describe('GET /api/v5/agents', () => {
     expect(coder).toMatchObject({ team: null, effort: null });
   });
 
-  it('returns Codex model profiles for dashboard rendering', async () => {
+  it('returns provider-accurate Claude model profiles for dashboard rendering', async () => {
     const projectRoot = makeTmpRoot();
     const agentsDir = join(projectRoot, '.agentforge', 'agents');
     mkdirSync(agentsDir, { recursive: true });
+
+    writeFileSync(join(agentsDir, 'planner.yaml'), [
+      'name: Planner',
+      'model: fable',
+    ].join('\n'));
 
     writeFileSync(join(agentsDir, 'architect.yaml'), [
       'name: Architect',
@@ -137,6 +142,11 @@ describe('GET /api/v5/agents', () => {
     writeFileSync(join(agentsDir, 'coder.yaml'), [
       'name: Coder',
       'model: sonnet',
+    ].join('\n'));
+
+    writeFileSync(join(agentsDir, 'linter.yaml'), [
+      'name: Linter',
+      'model: haiku',
     ].join('\n'));
 
     const { app } = await createServerV5({ listen: false, projectRoot });
@@ -153,28 +163,78 @@ describe('GET /api/v5/agents', () => {
         modelProfile?: { provider: string; tier: string; modelId: string; effort: string };
       }>;
     }>();
+    const planner = body.data.find(a => a.agentId === 'planner');
     const architect = body.data.find(a => a.agentId === 'architect');
     const coder = body.data.find(a => a.agentId === 'coder');
+    const linter = body.data.find(a => a.agentId === 'linter');
 
+    expect(planner).toMatchObject({
+      model: 'fable',
+      capabilityTier: 'fable',
+      modelProfile: {
+        provider: 'claude',
+        tier: 'fable',
+        modelId: 'claude-fable-5',
+        effort: 'xhigh',
+      },
+    });
     expect(architect).toMatchObject({
       model: 'opus',
       capabilityTier: 'opus',
       modelProfile: {
-        provider: 'codex-cli',
+        provider: 'claude',
         tier: 'opus',
-        modelId: 'gpt-5.5',
-        effort: 'xhigh',
+        modelId: 'claude-opus-4-8',
+        effort: 'high',
       },
     });
     expect(coder).toMatchObject({
       model: 'sonnet',
       capabilityTier: 'sonnet',
       modelProfile: {
-        provider: 'codex-cli',
+        provider: 'claude',
         tier: 'sonnet',
-        modelId: 'gpt-5.5',
+        modelId: 'claude-sonnet-4-6',
         effort: 'high',
       },
+    });
+    expect(linter).toMatchObject({
+      model: 'haiku',
+      capabilityTier: 'haiku',
+      modelProfile: {
+        provider: 'claude',
+        tier: 'haiku',
+        modelId: 'claude-haiku-4-5',
+        effort: 'medium',
+      },
+    });
+  });
+
+  it('uses the agent YAML effort verbatim in the model profile when present', async () => {
+    const projectRoot = makeTmpRoot();
+    const agentsDir = join(projectRoot, '.agentforge', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    writeFileSync(join(agentsDir, 'frugal-opus.yaml'), [
+      'name: Frugal Opus',
+      'model: opus',
+      'effort: low',
+    ].join('\n'));
+
+    const { app } = await createServerV5({ listen: false, projectRoot });
+    createdApps.push(app);
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/agents' });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json<{
+      data: Array<{ agentId: string; modelProfile?: { provider: string; modelId: string; effort: string } }>;
+    }>();
+    const frugal = body.data.find(a => a.agentId === 'frugal-opus');
+    expect(frugal?.modelProfile).toMatchObject({
+      provider: 'claude',
+      modelId: 'claude-opus-4-8',
+      effort: 'low',
     });
   });
 

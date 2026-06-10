@@ -13,10 +13,15 @@
   import type { TypecheckFailure } from '$lib/components/cycles/TypecheckFailureBanner.svelte';
   import CostBreakdownTile from '$lib/components/cycles/CostBreakdownTile.svelte';
   import QualityTile from '$lib/components/cycles/QualityTile.svelte';
+  import EpicTab from '$lib/components/cycles/EpicTab.svelte';
+  import SpendTab from '$lib/components/cycles/SpendTab.svelte';
+  import EpicReviewCard from '$lib/components/cycles/EpicReviewCard.svelte';
+  import { getDecomposition } from '$lib/api/epic.js';
 
   type Tab =
     | 'overview' | 'pipeline' | 'items' | 'agents'
-    | 'scoring' | 'events' | 'files' | 'prs' | 'logs';
+    | 'scoring' | 'events' | 'files' | 'prs' | 'logs'
+    | 'epic' | 'spend';
   type StageBrick = 'pending' | 'active' | 'done' | 'failed';
   type FileName = 'tests' | 'git' | 'pr' | 'approval-pending' | 'approval-decision';
   type LogName = 'cli-stdout' | 'tests-raw';
@@ -636,7 +641,7 @@
 
   const tabs = $derived.by(() => {
     const items = sprint?.items ?? [];
-    return [
+    const list: Array<{ id: Tab; label: string; count?: number }> = [
       { id: 'overview', label: 'Overview' },
       { id: 'pipeline', label: 'Pipeline', count: pipelinePhases.length },
       { id: 'items',    label: 'Items',    count: items.length },
@@ -647,6 +652,29 @@
       { id: 'prs',      label: 'PRs',      count: prsData?.meta.total },
       { id: 'logs',     label: 'Logs' },
     ];
+    if (isEpic) {
+      list.push({ id: 'epic',  label: 'Epic' });
+      list.push({ id: 'spend', label: 'Spend' });
+    }
+    return list;
+  });
+
+  // ── Epic / objective-mode state ───────────────────────────────────────────────
+  let isEpic = $state(false);
+
+  const epicItemResults = $derived.by<Record<string, { status: string; costUsd?: number }>>(() => {
+    const out: Record<string, { status: string; costUsd?: number }> = {};
+    for (const r of agentsData?.runs ?? []) {
+      if (r.phase !== 'execute' || !r.itemId) continue;
+      out[r.itemId] = {
+        status: r.status === 'completed' ? 'completed'
+              : r.status === 'failed'    ? 'failed'
+              : r.status === 'killed'    ? 'killed'
+              : 'in_progress',
+        costUsd: r.costUsd,
+      };
+    }
+    return out;
   });
 
   let rerunBusy = $state(false);
@@ -895,6 +923,13 @@
     } catch { /* silent */ }
   }
 
+  async function probeDecomposition(): Promise<void> {
+    try {
+      const d = await getDecomposition(id);
+      isEpic = d !== null;
+    } catch { /* non-epic cycles return null; errors stay false */ }
+  }
+
   async function loadSecondaryCycleData(): Promise<void> {
     await Promise.allSettled([
       loadSprint(),
@@ -902,6 +937,7 @@
       loadScoring(),
       loadEvents(),
       loadTypecheckFailure(),
+      probeDecomposition(),
     ]);
   }
 
@@ -1207,6 +1243,10 @@
       <div class="action-error af2-mono">{actionError}</div>
     {/if}
   </div>
+
+  {#if isEpic}
+    <EpicReviewCard cycleId={id} />
+  {/if}
 
   {#if showTerminalBanner}
     <div class="terminal-banner" role="alert">
@@ -2063,6 +2103,18 @@
       {:else}
         <pre class="log-pre af2-mono" id="log-raw-pre">{(logText[activeLog] ?? '') + (logStreamLines.length ? '\n' + logStreamLines.join('\n') : '')}</pre>
       {/if}
+    </Card>
+  {/if}
+
+  {#if activeTab === 'epic'}
+    <Card>
+      <EpicTab cycleId={id} itemResults={epicItemResults} />
+    </Card>
+  {/if}
+
+  {#if activeTab === 'spend'}
+    <Card>
+      <SpendTab cycleId={id} />
     </Card>
   {/if}
 {/if}
