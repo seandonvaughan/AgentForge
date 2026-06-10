@@ -168,13 +168,17 @@ test.describe('Agents List Page', () => {
     await page.getByRole('button', { name: 'Edit config' }).click();
     await expect(page.getByRole('tab', { name: 'Config' })).toHaveAttribute('aria-selected', 'true');
     // v25: the raw YAML editor lives in the collapsed "Advanced: raw YAML"
-    // section beneath the structured editor — expand it first.
+    // section beneath the structured editor — expand it, then enter edit mode
+    // (the section opens in read-only preview).
     await page.getByRole('button', { name: /advanced: raw yaml/i }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const editor = page.getByLabel('Agent YAML configuration');
     await expect(editor).toBeVisible();
 
     await editor.fill(updatedYaml);
-    await page.getByRole('button', { name: 'Save' }).click();
+    // Two Save buttons exist now (structured editor + raw YAML) — use the raw
+    // section's header-scoped one.
+    await page.locator('.af-config-header').getByRole('button', { name: 'Save' }).click();
 
     await expect.poll(() => savedYaml).toContain('Updated from dashboard test');
     await expect(page.locator('.af-save-ok')).toContainText('Saved');
@@ -301,10 +305,10 @@ test.describe('Agents List Page', () => {
 
     const filterPills = page.locator('button.af-pill');
     const pillCount = await filterPills.count();
-    expect(pillCount).toBeGreaterThanOrEqual(4); // all, xhigh, high, medium
+    expect(pillCount).toBeGreaterThanOrEqual(4); // all, opus, sonnet, haiku (+fable when present)
 
-    // Click the xhigh profile filter (AgentForge opus capability tier)
-    const opusFilter = filterPills.filter({ hasText: /^xhigh$/i }).first();
+    // Click the opus tier filter (pills are tier-named in v25)
+    const opusFilter = filterPills.filter({ hasText: /^opus$/i }).first();
     await opusFilter.click();
 
     // Verify it becomes active
