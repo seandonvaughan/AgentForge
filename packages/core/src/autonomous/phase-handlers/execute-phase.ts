@@ -48,6 +48,9 @@ import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
 import { appendAgentMemory, extractLearnedNotes } from '../../memory/agent-memory.js';
 import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-retrieval.js';
+// v25 — cross-agent learning: LEARNED self-notes also land in the shared
+// knowledge store so other agents' KB retrieval can surface them.
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
@@ -1705,6 +1708,20 @@ export async function runExecutePhase(
               cycleId: ctx.cycleId,
               itemId: item.id,
             });
+            // v25 — also persist the LEARNED note to the shared W1 knowledge
+            // store so one agent's lesson reaches other agents' retrieval
+            // (searchKnowledgeNotes injects note entities into prompts).
+            // Non-fatal: a knowledge-write failure must never fail the item.
+            try {
+              writeKnowledgeEntry(ctx.projectRoot, {
+                text: note,
+                source: 'agent-learned',
+                tags: [item.assignee, ...(ctx.cycleId ? [ctx.cycleId] : [])],
+                cycleId: ctx.cycleId,
+              });
+            } catch {
+              // best-effort — never affects the item result
+            }
           }
           return completedResult;
         } catch (err) {

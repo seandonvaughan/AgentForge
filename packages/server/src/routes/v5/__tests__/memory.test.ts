@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { dashboardStubRoutes } from '../dashboard-stubs.js';
@@ -46,9 +46,24 @@ function appendJsonlEntry(
   ensureMemoryDir();
   const line = JSON.stringify({ id: `id-${Math.random()}`, type, createdAt: new Date().toISOString(), ...entry });
   const filePath = join(memoryDir(), `${type}.jsonl`);
-  // Use appendFileSync behaviour via a try-catch write to keep tests self-contained.
+  // Append behaviour via read-then-write to keep tests self-contained.
   const existing = (() => {
-    try { return require('node:fs').readFileSync(filePath, 'utf-8'); } catch { return ''; }
+    try { return readFileSync(filePath, 'utf-8'); } catch { return ''; }
+  })();
+  writeFileSync(filePath, existing + line + '\n', 'utf-8');
+}
+
+/** Append one per-agent memory entry (mimics appendAgentMemory behaviour). */
+function appendAgentJsonlEntry(
+  agentId: string,
+  entry: Record<string, unknown>,
+) {
+  const agentsDir = join(memoryDir(), 'agents');
+  mkdirSync(agentsDir, { recursive: true });
+  const line = JSON.stringify({ id: `id-${Math.random()}`, createdAt: new Date().toISOString(), ...entry });
+  const filePath = join(agentsDir, `${agentId}.jsonl`);
+  const existing = (() => {
+    try { return readFileSync(filePath, 'utf-8'); } catch { return ''; }
   })();
   writeFileSync(filePath, existing + line + '\n', 'utf-8');
 }
@@ -656,5 +671,181 @@ describe('GET /api/v5/memory/stream', () => {
     expect(entry['agentId']).toBe('agent-reviewer');
     // tags must be forwarded
     expect(entry['tags']).toEqual(['lesson', 'testing']);
+  });
+});
+
+// ── v25 — real agent-memory fields, kind filter, telemetry exclusion ────────
+
+describe('GET /api/v5/memory — agent-memory real fields (v25)', () => {
+  it('surfaces kind, itemId, cycleId and outcome from memory/agents/*.jsonl', async () => {
+    appendAgentJsonlEntry('cli-engineer', {
+      id: 'am-1',
+      kind: 'item-outcome',
+      value: 'completed "Add CLI command" (1 attempt, $1.60)',
+      cycleId: 'cycle-abc',
+      itemId: 'child-10',
+      outcome: 'completed',
+      tags: ['commander'],
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { data: Array<Record<string, unknown>> };
+    const entry = body.data.find(e => e['id'] === 'am-1')!;
+    expect(entry).toBeDefined();
+    expect(entry['type']).toBe('agent-memory');
+    expect(entry['agentId']).toBe('cli-engineer');
+    expect(entry['kind']).toBe('item-outcome');
+    expect(entry['itemId']).toBe('child-10');
+    expect(entry['cycleId']).toBe('cycle-abc');
+    expect(entry['outcome']).toBe('completed');
+  });
+
+  it('?kind= filters agent-memory entries by their kind', async () => {
+    appendAgentJsonlEntry('coder', {
+      id: 'note-1',
+      kind: 'self-note',
+      value: 'Always use conditional spreads for optional props.',
+      cycleId: 'cycle-1',
+      itemId: 'item-1',
+    });
+    appendAgentJsonlEntry('coder', {
+      id: 'outcome-1',
+      kind: 'item-outcome',
+      value: 'completed "thing" (1 attempt, $0.10)',
+      cycleId: 'cycle-1',
+      itemId: 'item-1',
+      outcome: 'completed',
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?kind=self-note' });
+    const body = JSON.parse(res.body) as { data: Array<Record<string, unknown>>; meta: { total: number } };
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!['id']).toBe('note-1');
+    expect(body.data[0]!['kind']).toBe('self-note');
+  });
+
+  it('?type=agent-memory&kind=self-note combines both filters', async () => {
+    appendJsonlEntry('learned-fact', { id: 'lf-1', value: 'a fact' });
+    appendAgentJsonlEntry('coder', { id: 'note-2', kind: 'self-note', value: 'a lesson worth keeping' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?type=agent-memory&kind=self-note' });
+    const body = JSON.parse(res.body) as { data: Array<Record<string, unknown>>; meta: { total: number } };
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!['id']).toBe('note-2');
+  });
+});
+
+describe('GET /api/v5/memory — telemetry exclusion (v25)', () => {
+  it('excludes lesson-attribution and step-scores entries by default', async () => {
+    appendJsonlEntry('lesson-attribution', { id: 'la-1', value: 'telemetry blob' });
+    appendJsonlEntry('step-scores', { id: 'ss-1', value: 'score blob' });
+    appendJsonlEntry('gate-verdict', { id: 'gv-1', value: 'approved' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const body = JSON.parse(res.body) as {
+      data: Array<Record<string, unknown>>;
+      types: string[];
+      meta: { total: number };
+    };
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]!['id']).toBe('gv-1');
+    // The type-chip row must not advertise hidden types.
+    expect(body.types).not.toContain('lesson-attribution');
+    expect(body.types).not.toContain('step-scores');
+  });
+
+  it('?includeTelemetry=1 surfaces telemetry entries and their types', async () => {
+    appendJsonlEntry('lesson-attribution', { id: 'la-2', value: 'telemetry blob' });
+    appendJsonlEntry('gate-verdict', { id: 'gv-2', value: 'approved' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v5/memory?includeTelemetry=1' });
+    const body = JSON.parse(res.body) as {
+      data: Array<Record<string, unknown>>;
+      types: string[];
+      meta: { total: number };
+    };
+    expect(body.meta.total).toBe(2);
+    expect(body.types).toContain('lesson-attribution');
+  });
+});
+
+// ── v25 — DELETE /api/v5/memory/:id (real deletion) ─────────────────────────
+
+describe('DELETE /api/v5/memory/:id', () => {
+  it('returns 404 when the memory directory does not exist', async () => {
+    const res = await app.inject({ method: 'DELETE', url: '/api/v5/memory/nope' });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 404 when no entry carries the id', async () => {
+    appendJsonlEntry('gate-verdict', { id: 'gv-keep', value: 'approved' });
+    const res = await app.inject({ method: 'DELETE', url: '/api/v5/memory/unknown-id' });
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.body) as { code: string };
+    expect(body.code).toBe('MEMORY_ENTRY_NOT_FOUND');
+  });
+
+  it('deletes a shared-pool entry and preserves the other lines', async () => {
+    appendJsonlEntry('gate-verdict', { id: 'gv-del', value: 'to delete' });
+    appendJsonlEntry('gate-verdict', { id: 'gv-keep', value: 'to keep' });
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v5/memory/gv-del' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { ok: boolean; deleted: string; file: string };
+    expect(body.ok).toBe(true);
+    expect(body.deleted).toBe('gv-del');
+    expect(body.file).toBe('gate-verdict.jsonl');
+
+    // The file was rewritten without the deleted entry.
+    const remaining = readFileSync(join(memoryDir(), 'gate-verdict.jsonl'), 'utf-8');
+    expect(remaining).toContain('gv-keep');
+    expect(remaining).not.toContain('gv-del');
+
+    // And GET no longer returns it.
+    const getRes = await app.inject({ method: 'GET', url: '/api/v5/memory' });
+    const getBody = JSON.parse(getRes.body) as { data: Array<{ id: string }> };
+    expect(getBody.data.map(e => e.id)).not.toContain('gv-del');
+  });
+
+  it('deletes an entry from a per-agent memory file', async () => {
+    appendAgentJsonlEntry('coder', { id: 'am-del', kind: 'self-note', value: 'a deletable lesson' });
+    appendAgentJsonlEntry('coder', { id: 'am-keep', kind: 'self-note', value: 'a keepable lesson' });
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v5/memory/am-del' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { ok: boolean; file: string };
+    expect(body.ok).toBe(true);
+    expect(body.file).toBe('coder.jsonl');
+
+    const remaining = readFileSync(join(memoryDir(), 'agents', 'coder.jsonl'), 'utf-8');
+    expect(remaining).toContain('am-keep');
+    expect(remaining).not.toContain('am-del');
+  });
+
+  it('preserves malformed JSONL lines while deleting a valid one', async () => {
+    ensureMemoryDir();
+    const filePath = join(memoryDir(), 'mixed.jsonl');
+    writeFileSync(
+      filePath,
+      'NOT_JSON_AT_ALL\n' +
+        JSON.stringify({ id: 'mx-del', type: 'mixed', value: 'bye' }) + '\n',
+      'utf-8',
+    );
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/v5/memory/mx-del' });
+    expect(res.statusCode).toBe(200);
+
+    const remaining = readFileSync(filePath, 'utf-8');
+    expect(remaining).toContain('NOT_JSON_AT_ALL');
+    expect(remaining).not.toContain('mx-del');
+  });
+
+  it('a second delete of the same id returns 404 (idempotent surface)', async () => {
+    appendJsonlEntry('gate-verdict', { id: 'gv-once', value: 'only once' });
+    const first = await app.inject({ method: 'DELETE', url: '/api/v5/memory/gv-once' });
+    expect(first.statusCode).toBe(200);
+    const second = await app.inject({ method: 'DELETE', url: '/api/v5/memory/gv-once' });
+    expect(second.statusCode).toBe(404);
   });
 });
