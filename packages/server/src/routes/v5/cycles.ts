@@ -1989,6 +1989,8 @@ export async function cyclesRoutes(
       maxAgents?: number;
       tags?: unknown;
       fallbackEnabled?: unknown;
+      // objective-mode
+      objective?: unknown;
     };
 
     if (body.budgetUsd !== undefined) {
@@ -2027,6 +2029,18 @@ export async function cyclesRoutes(
     }
     if (body.fallbackEnabled !== undefined && typeof body.fallbackEnabled !== 'boolean') {
       return reply.status(400).send({ error: 'fallbackEnabled must be a boolean' });
+    }
+    if (body.objective !== undefined) {
+      if (typeof body.objective !== 'string') {
+        return reply.status(400).send({ error: 'objective must be a string' });
+      }
+      const objTrimLen = body.objective.trim().length;
+      if (objTrimLen === 0) {
+        return reply.status(400).send({ error: 'objective must not be empty' });
+      }
+      if (objTrimLen > 4000) {
+        return reply.status(400).send({ error: 'objective must be 4000 characters or fewer' });
+      }
     }
     if (body.branchPrefix !== undefined && typeof body.branchPrefix !== 'string') {
       return reply.status(400).send({ error: 'branchPrefix must be a string' });
@@ -2081,6 +2095,9 @@ export async function cyclesRoutes(
       ? { AUTONOMOUS_BASE_BRANCH: resolvedBaseBranch }
       : {};
     const dryRunEnv = body.dryRun === true ? { AUTONOMOUS_DRY_RUN: 'true' } : {};
+    const objectiveValue = typeof body.objective === 'string' && body.objective.trim().length > 0
+      ? body.objective.trim()
+      : undefined;
 
     const cycleId = randomUUID();
     const startedAt = new Date().toISOString();
@@ -2136,6 +2153,7 @@ export async function cyclesRoutes(
       runtimeMode: 'codex-cli',
       workspaceId,
       fastMode: body.fastMode === true,
+      ...(objectiveValue !== undefined ? { objective: objectiveValue } : {}),
     };
     try {
       writeFileSync(join(cycleDir, 'cycle-config.json'), JSON.stringify(cycleConfig, null, 2));
@@ -2205,6 +2223,7 @@ export async function cyclesRoutes(
       tags,
       fallbackEnabled: body.fallbackEnabled ?? null,
       fastMode: body.fastMode === true,
+      ...(objectiveValue !== undefined ? { objective: objectiveValue } : {}),
     });
   });
 
