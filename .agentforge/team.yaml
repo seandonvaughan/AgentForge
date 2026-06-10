@@ -1,6 +1,6 @@
 name: agentforge-team
-forged_at: '2026-05-17T20:11:22.490Z'
-forged_by: agentforge-synthesis
+forged_at: '2026-06-10T09:44:26.000Z'
+forged_by: v25-handcraft
 project_hash: 4de17a412cf7
 agents:
   strategic:
@@ -23,22 +23,35 @@ agents:
     - svelte-runner-engineer
     - svelte-component-atoms-engineer
     - shared-utils-engineer
+    - pr-merge-manager
+    - coder
+    - architect
+    - researcher
   quality:
     - auth-security-engineer
     - test-engineer
     - ci-build-engineer
+    - code-reviewer
+    - backend-qa
   utility:
     - yaml-doctor
     - memory-curator
     - file-reader
-    - pr-merge-manager
+    - data-analyst
+    - scorer-evaluator
+    - backlog-scorer
+    - ceo
 model_routing:
   fable:
-    - epic-planner
-  opus:
     - chief-architect
+    - epic-planner
+    - ceo
+  opus:
     - forge-engine-architect
     - autonomy-strategist
+    - backlog-scorer
+    - auth-security-engineer
+    - code-reviewer
   sonnet:
     - fastify-v5-engineer
     - fastify-v6-shim-engineer
@@ -47,21 +60,26 @@ model_routing:
     - plugin-sdk-engineer
     - executor-runtime-engineer
     - cli-engineer
-    - auth-security-engineer
     - scanner-engineer
     - reforge-genesis-engineer
     - svelte-cycles-engineer
     - svelte-agents-engineer
     - svelte-runner-engineer
-    - test-engineer
-    - ci-build-engineer
-    - pr-merge-manager
-  haiku:
     - svelte-component-atoms-engineer
     - shared-utils-engineer
+    - pr-merge-manager
+    - coder
+    - architect
+    - researcher
+    - test-engineer
+    - ci-build-engineer
+    - backend-qa
+  haiku:
     - yaml-doctor
     - memory-curator
     - file-reader
+    - data-analyst
+    - scorer-evaluator
 delegation_graph:
   epic-planner: []
   chief-architect:
@@ -79,33 +97,19 @@ delegation_graph:
     - svelte-runner-engineer
     - svelte-component-atoms-engineer
     - shared-utils-engineer
+    - pr-merge-manager
+    - coder
+    - architect
+    - researcher
   forge-engine-architect:
-    - fastify-v5-engineer
-    - fastify-v6-shim-engineer
-    - db-workspace-engineer
-    - embeddings-engineer
-    - plugin-sdk-engineer
-    - executor-runtime-engineer
-    - cli-engineer
     - scanner-engineer
     - reforge-genesis-engineer
-    - svelte-cycles-engineer
-    - svelte-agents-engineer
-    - svelte-runner-engineer
-    - svelte-component-atoms-engineer
     - shared-utils-engineer
+    - yaml-doctor
+    - coder
   autonomy-strategist:
-    - fastify-v5-engineer
-    - fastify-v6-shim-engineer
-    - db-workspace-engineer
-    - embeddings-engineer
-    - plugin-sdk-engineer
     - executor-runtime-engineer
     - cli-engineer
-    - scanner-engineer
-    - reforge-genesis-engineer
-    - svelte-cycles-engineer
-    - svelte-agents-engineer
-    - svelte-runner-engineer
-    - svelte-component-atoms-engineer
-    - shared-utils-engineer
+    - db-workspace-engineer
+    - scorer-evaluator
+    - coder
