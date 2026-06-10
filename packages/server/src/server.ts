@@ -243,12 +243,6 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
   await cyclesRoutes(app, { projectRoot });
-  // child-4 — epic-artifact readers (decomposition.json / epic-review.json /
-  // spend-report.json). Dual-registered: here (no-adapter) and in
-  // registerV5Routes (adapter).
-  await cycleDecompositionRoutes(app, { projectRoot });
-  await cycleEpicReviewRoutes(app, { projectRoot });
-  await cycleSpendReportRoutes(app, { projectRoot });
   await cyclesPreviewRoutes(app, { projectRoot });
   await researchRunsRoutes(app, { projectRoot });
 
@@ -256,6 +250,13 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // Guard: registerV5Routes already calls cyclePrsRoutes in adapter mode.
   if (!options.adapter || !options.registry) {
     await cyclePrsRoutes(app, { projectRoot });
+    // child-4 — epic-artifact readers (decomposition.json / epic-review.json /
+    // spend-report.json). Same guard: registerV5Routes registers these three
+    // in adapter mode, so an unguarded call here would FST_ERR_DUPLICATED_ROUTE
+    // on the full-stack boot (caught by Product E2E on the first PR push).
+    await cycleDecompositionRoutes(app, { projectRoot });
+    await cycleEpicReviewRoutes(app, { projectRoot });
+    await cycleSpendReportRoutes(app, { projectRoot });
   }
 
   // ── Cycle cost breakdown (per-token breakdown from cycle.json) ────────────
