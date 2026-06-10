@@ -218,6 +218,10 @@ interface CycleListRow {
   approvalDecision: string | null;
   /** Agent ids that participated in this cycle, sourced from session data. */
   agents: string[];
+  /** True when this cycle is an epic (has an objective in its config or decomposition.json exists). */
+  epic: boolean;
+  /** Number of child cycles in decomposition.json children array; 0 when absent. */
+  childCount: number;
   runtimeMode?: string | null;
   branchPrefix?: string | null;
   baseBranch?: string | null;
@@ -381,6 +385,51 @@ function readCycleLaunchConfig(cycleDir: string): Record<string, unknown> {
     : {};
 }
 
+/**
+ * Reads decomposition.json from the cycle directory and extracts epic-related
+ * fields. Always defensive: returns { epic: false, childCount: 0 } on any
+ * parse failure or missing file.
+ *
+ * `epic` is true when decomposition.json exists OR the launch config contains
+ * a non-empty objective string.
+ * `childCount` is the length of decomposition.json's `children` array (0 if absent).
+ */
+function readDecompositionEpicFields(
+  cycleDir: string,
+  launchConfig: Record<string, unknown>,
+): { epic: boolean; childCount: number } {
+  const hasObjective =
+    typeof launchConfig['objective'] === 'string' &&
+    launchConfig['objective'].trim().length > 0;
+
+  const decompositionFile = join(cycleDir, 'decomposition.json');
+  const decompositionExists = existsSync(decompositionFile);
+
+  const epic = hasObjective || decompositionExists;
+
+  let childCount = 0;
+  if (decompositionExists) {
+    try {
+      const raw = readFileSync(decompositionFile, 'utf-8');
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+      ) {
+        const children = (parsed as Record<string, unknown>)['children'];
+        if (Array.isArray(children)) {
+          childCount = children.length;
+        }
+      }
+    } catch {
+      /* malformed JSON — leave childCount as 0 */
+    }
+  }
+
+  return { epic, childCount };
+}
+
 function launchConfigFields(config: Record<string, unknown>): Pick<
   CycleListRow,
   'runtimeMode' | 'branchPrefix' | 'baseBranch' | 'dryRun' | 'maxAgents' | 'fastMode' | 'modelCap' | 'effortCap' | 'tags' | 'fallbackEnabled' | 'launchConfig'
@@ -504,6 +553,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
   const launchConfig = readCycleLaunchConfig(cycleDir);
   const configFields = launchConfigFields(launchConfig);
   const fallbackBudgetUsd = configuredBudgetUsd(launchConfig);
+  const epicFields = readDecompositionEpicFields(cycleDir, launchConfig);
 
   const cycleJson = readJsonIfExists(join(cycleDir, 'cycle.json')) as
     | Record<string, unknown>
@@ -575,6 +625,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
       hasApprovalDecision,
       approvalDecision,
       agents: collectCycleAgentIds(cycleDir),
+      ...epicFields,
       ...configFields,
     };
   }
@@ -686,6 +737,7 @@ function summarizeCycle(cycleDir: string, cycleId: string, projectRoot?: string)
     hasApprovalDecision,
     approvalDecision,
     agents: collectCycleAgentIds(cycleDir),
+    ...epicFields,
     ...configFields,
   };
 }
