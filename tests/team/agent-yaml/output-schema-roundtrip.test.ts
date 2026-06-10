@@ -134,6 +134,19 @@ describe("AgentYaml output_schema round-trip", () => {
     expect(result.model).toBe(SAMPLE_AGENT_WITHOUT_OUTPUT_SCHEMA.model);
   });
 
+  it("preserves the optional tools field through a round-trip", () => {
+    const withTools: AgentYaml = {
+      ...SAMPLE_AGENT_WITHOUT_OUTPUT_SCHEMA,
+      tools: ["Read", "Grep", "Bash"],
+    };
+    const result = roundTrip(withTools);
+    expect(result.tools).toEqual(["Read", "Grep", "Bash"]);
+
+    // Absent tools stays absent — no empty-array injection.
+    const without = roundTrip(SAMPLE_AGENT_WITHOUT_OUTPUT_SCHEMA);
+    expect(without.tools).toBeUndefined();
+  });
+
   it("dumpAgentYaml uses js-yaml (no template strings) — YAML is parseable", () => {
     // If template strings were used, corner-cases like colons in system_prompt
     // would produce malformed YAML. js-yaml.dump correctly quotes them.

@@ -48,6 +48,8 @@ export const AgentYamlSchema = z.object({
   description: z.string().optional(),
   system_prompt: z.string().min(1),
   skills: z.array(z.string()).optional(),
+  // Claude Code tool names mirrored into .claude/agents/<id>.md frontmatter.
+  tools: z.array(z.string()).optional(),
   triggers: z
     .object({
       file_patterns: z.array(z.string()).optional(),

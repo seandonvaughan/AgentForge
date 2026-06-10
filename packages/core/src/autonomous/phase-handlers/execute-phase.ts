@@ -1677,6 +1677,12 @@ export async function runExecutePhase(
             ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
+          // Flush the updated cost to execute.json immediately so mid-flight
+          // readers (dashboard Epic tab, spend-report generator) can see this
+          // item's nonzero costUsd before the async worktree operations in the
+          // finally block (commit / push / release) complete.  Without this
+          // early flush, readers see costUsd: 0 until the whole phase ends.
+          snapshotExecuteProgress();
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
@@ -1750,6 +1756,9 @@ export async function runExecutePhase(
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
+            // Flush the failure state immediately (mirrors the success path's
+            // early flush) so mid-flight readers always see up-to-date results.
+            snapshotExecuteProgress();
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
             // W2 — record the failure (with a short error excerpt) in the
