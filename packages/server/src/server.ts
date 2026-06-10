@@ -18,6 +18,9 @@ import { intelligenceRoutes } from './routes/v5/intelligence.js';
 import { embeddingRoutes } from './routes/v5/embeddings.js';
 import { sprintsRoutes } from './routes/v5/sprints.js';
 import { cyclesRoutes } from './routes/v5/cycles.js';
+import { cycleDecompositionRoutes } from './routes/v5/cycle-decomposition.js';
+import { cycleEpicReviewRoutes } from './routes/v5/cycle-epic-review.js';
+import { cycleSpendReportRoutes } from './routes/v5/cycle-spend-report.js';
 import { cyclesPreviewRoutes } from './routes/v5/cycles-preview.js';
 import { researchRunsRoutes } from './routes/v5/research-runs.js';
 import { codexReadinessRoutes } from './routes/v5/codex-readiness.js';
@@ -240,6 +243,12 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
 
   // ── Cycles (reads .agentforge/cycles/*/ — no adapter required) ───────────────
   await cyclesRoutes(app, { projectRoot });
+  // child-4 — epic-artifact readers (decomposition.json / epic-review.json /
+  // spend-report.json). Dual-registered: here (no-adapter) and in
+  // registerV5Routes (adapter).
+  await cycleDecompositionRoutes(app, { projectRoot });
+  await cycleEpicReviewRoutes(app, { projectRoot });
+  await cycleSpendReportRoutes(app, { projectRoot });
   await cyclesPreviewRoutes(app, { projectRoot });
   await researchRunsRoutes(app, { projectRoot });
 
