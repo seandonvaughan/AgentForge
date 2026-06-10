@@ -21,7 +21,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 /** Hard cap per agent file — compaction keeps the most recent entries. */
@@ -195,7 +195,14 @@ export function readAgentMemoryFromDir(
 ): AgentMemoryEntry[] {
   const fileName = safeAgentFileName(agentId);
   if (!fileName) return [];
-  const filePath = join(memoryDir, 'agents', fileName);
+  // Containment barrier (CodeQL js/path-injection): resolve the joined path
+  // and require it to stay under the agents dir. safeAgentFileName already
+  // guarantees a traversal-free segment, but the analyzer does not credit a
+  // re-used full-match (`m[0]`), so the prefix check provides a barrier it
+  // can trace — and defends in depth if the sanitizer ever loosens.
+  const agentsDir = resolve(memoryDir, 'agents');
+  const filePath = resolve(agentsDir, fileName);
+  if (!filePath.startsWith(agentsDir + sep)) return [];
   if (!existsSync(filePath)) return [];
   try {
     return parseLines(readFileSync(filePath, 'utf8')).slice(-limit).reverse();
