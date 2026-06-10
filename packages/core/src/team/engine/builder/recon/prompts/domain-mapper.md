@@ -74,6 +74,9 @@ Expected output:
 ## Rules
 
 - Ground every claim in the provided inputs. Do not invent product capabilities.
+- Describe the product itself; IGNORE host-plugin wrappers (`plugins/*/SKILL.md`,
+  `.claude-plugin/`) when deriving `product_name`/`one_liner`. A project is never
+  "a Codex plugin" or "a Claude plugin" just because it ships one.
 - `one_liner` must be a single sentence, ≤ 20 words.
 - `core_primitives` should be concrete nouns from the codebase, not abstract concepts.
 - `domain_vocabulary` should be words that recur in the codebase and carry project-specific meaning.

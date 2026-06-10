@@ -2,6 +2,27 @@ import { describe, it, expect } from "vitest";
 import { composeTeam, composeTeamFromDomains } from "../../packages/core/src/team/engine/builder/team-composer.js";
 import type { FullScanResult } from "../../packages/core/src/team/engine/scanner/index.js";
 import type { DomainPack, DomainId } from "../../packages/core/src/team/engine/types/domain.js";
+import type { AgentTemplate, ModelTier } from "../../packages/core/src/team/engine/types/agent.js";
+
+/** Build a minimal AgentTemplate pinned to a model tier. */
+function makeTemplate(name: string, model: ModelTier): AgentTemplate {
+  return {
+    name,
+    model,
+    version: "1.0",
+    description: `${name} agent`,
+    system_prompt: `You are the ${name}.`,
+    skills: [],
+    triggers: { file_patterns: [], keywords: [] },
+    collaboration: {
+      reports_to: null,
+      reviews_from: [],
+      can_delegate_to: [],
+      parallel: false,
+    },
+    context: { max_files: 20, auto_include: [], project_specific: [] },
+  };
+}
 
 /**
  * Creates a minimal FullScanResult for testing, with overrides applied.
@@ -83,6 +104,20 @@ describe("team-composer", () => {
       expect(result.model_assignments["researcher"]).toBe("sonnet");
       expect(result.model_assignments["file-reader"]).toBe("haiku");
       expect(result.model_assignments["linter"]).toBe("haiku");
+    });
+
+    it("should respect an explicit template model (fable) over the defaults", () => {
+      const scan = makeScanResult({});
+      const templates = new Map<string, AgentTemplate>([
+        ["architect", makeTemplate("architect", "fable")],
+      ]);
+
+      const result = composeTeam(scan, templates);
+
+      // Explicit template model wins over DEFAULT_MODELS ("opus")
+      expect(result.model_assignments["architect"]).toBe("fable");
+      // Agents without a template keep their defaults
+      expect(result.model_assignments["coder"]).toBe("sonnet");
     });
   });
 
@@ -575,6 +610,28 @@ describe("composeTeamFromDomains", () => {
       for (const agent of result.agents) {
         expect(result.model_assignments[agent]).toBeDefined();
       }
+    });
+
+    it("should respect an explicit template model (fable) in domain composition", () => {
+      const scan = makeScanResult({});
+      const corePack = makeDomainPack({
+        name: "core",
+        agents: {
+          strategic: ["architect"],
+          implementation: ["coder"],
+          quality: [],
+          utility: [],
+        },
+      });
+      const domainPacks = new Map<DomainId, DomainPack>([["core", corePack]]);
+      const templates = new Map<string, AgentTemplate>([
+        ["architect", makeTemplate("architect", "fable")],
+      ]);
+
+      const result = composeTeamFromDomains(scan, ["core"], domainPacks, templates);
+
+      expect(result.model_assignments["architect"]).toBe("fable");
+      expect(result.model_assignments["coder"]).toBe("sonnet");
     });
   });
 
