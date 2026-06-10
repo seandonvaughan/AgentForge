@@ -5,7 +5,7 @@
  * that lists required agents, custom specialists, and model assignments.
  */
 
-import type { ModelTier } from "../types/agent.js";
+import type { AgentTemplate, ModelTier } from "../types/agent.js";
 import type { FullScanResult } from "../scanner/index.js";
 import type { DomainPack, DomainId } from "../types/domain.js";
 import type { TeamUnit, TechnicalLayer, SeniorityLevel } from "../types/lifecycle.js";
@@ -50,7 +50,13 @@ const CORE_AGENTS = [
   "linter",
 ] as const;
 
-/** Default model assignments from the standard templates. */
+/**
+ * Default model assignments from the standard templates.
+ *
+ * {@link ModelTier} includes the `fable` tier — an explicit `model: fable`
+ * on a template always wins over these defaults (see
+ * {@link resolveAssignedModel}).
+ */
 const DEFAULT_MODELS: Record<string, ModelTier> = {
   architect: "opus",
   coder: "sonnet",
@@ -63,6 +69,20 @@ const DEFAULT_MODELS: Record<string, ModelTier> = {
   "devops-engineer": "sonnet",
   "documentation-writer": "sonnet",
 };
+
+/**
+ * Resolve the model tier for an agent. An explicit `model:` on the agent's
+ * template (including `fable`) takes precedence over {@link DEFAULT_MODELS};
+ * unknown agents fall back to `sonnet`.
+ */
+function resolveAssignedModel(
+  agentName: string,
+  templates?: Map<string, AgentTemplate>,
+): ModelTier {
+  const templateModel = templates?.get(agentName)?.model;
+  if (templateModel) return templateModel;
+  return DEFAULT_MODELS[agentName] ?? "sonnet";
+}
 
 // ---------------------------------------------------------------------------
 // Detection helpers
@@ -195,12 +215,15 @@ function hasMLPatterns(scan: FullScanResult): boolean {
  * @param scan - Full scan result from all scanners.
  * @param activeDomains - Domain IDs that have been activated for this project.
  * @param domainPacks - All available domain packs (keyed by DomainId).
+ * @param templates - Optional agent templates; an explicit `model:` tier on a
+ *   template (e.g. `fable`) overrides {@link DEFAULT_MODELS}.
  * @returns A {@link TeamComposition} with merged, deduplicated agent list.
  */
 export function composeTeamFromDomains(
   scan: FullScanResult,
   activeDomains: DomainId[],
   domainPacks: Map<DomainId, DomainPack>,
+  templates?: Map<string, AgentTemplate>,
 ): TeamComposition {
   const agentSet = new Set<string>();
   const custom_agents: CustomAgentSpec[] = [];
@@ -285,7 +308,7 @@ export function composeTeamFromDomains(
   const agents = [...agentSet];
 
   for (const agent of agents) {
-    model_assignments[agent] = DEFAULT_MODELS[agent] ?? "sonnet";
+    model_assignments[agent] = resolveAssignedModel(agent, templates);
   }
   for (const custom of custom_agents) {
     model_assignments[custom.name] = "sonnet";
@@ -302,7 +325,10 @@ export function composeTeamFromDomains(
  *
  * @deprecated Prefer {@link composeTeamFromDomains} for domain-aware composition.
  */
-export function composeTeam(scan: FullScanResult): TeamComposition {
+export function composeTeam(
+  scan: FullScanResult,
+  templates?: Map<string, AgentTemplate>,
+): TeamComposition {
   const agents: string[] = [...CORE_AGENTS];
   const custom_agents: CustomAgentSpec[] = [];
   const model_assignments: Record<string, ModelTier> = {};
@@ -371,7 +397,7 @@ export function composeTeam(scan: FullScanResult): TeamComposition {
   // ── Model assignments ──────────────────────────────────────────────────
 
   for (const agent of agents) {
-    model_assignments[agent] = DEFAULT_MODELS[agent] ?? "sonnet";
+    model_assignments[agent] = resolveAssignedModel(agent, templates);
   }
   for (const custom of custom_agents) {
     // Custom specialists get sonnet by default

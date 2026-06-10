@@ -6,7 +6,7 @@
  * agent team should be updated.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import type { DomainId } from "../types/domain.js";
@@ -354,9 +354,84 @@ export async function reforgeTeam(projectRoot: string): Promise<TeamDiff> {
   return diffManifests(oldManifest, newManifest, reasons);
 }
 
+/** Per-agent learnings cap — mirrors the documented 8-lesson flywheel cap. */
+const LEARNINGS_CAP = 8;
+
+/**
+ * Read the `learnings:` array of every agent YAML in `agentsDir`.
+ * Returns a map keyed by agent id (file basename without extension).
+ * Unreadable or learnings-less files are skipped.
+ *
+ * Exported for tests and for callers that snapshot learnings around a forge.
+ */
+export async function readAgentLearnings(
+  agentsDir: string,
+): Promise<Map<string, string[]>> {
+  const preserved = new Map<string, string[]>();
+  let files: string[];
+  try {
+    files = await readdir(agentsDir);
+  } catch {
+    return preserved;
+  }
+  for (const file of files) {
+    if (!file.endsWith(".yaml") && !file.endsWith(".yml")) continue;
+    try {
+      const raw = await readFile(join(agentsDir, file), "utf-8");
+      const parsed = yaml.load(raw) as { learnings?: unknown } | null;
+      if (parsed && Array.isArray(parsed.learnings)) {
+        const learnings = parsed.learnings.filter(
+          (l): l is string => typeof l === "string" && l.length > 0,
+        );
+        if (learnings.length > 0) {
+          preserved.set(file.replace(/\.ya?ml$/, ""), learnings);
+        }
+      }
+    } catch {
+      // unreadable/unparseable file — nothing to preserve for it
+    }
+  }
+  return preserved;
+}
+
+/**
+ * Merge previously-preserved learnings back into freshly-rewritten agent
+ * YAMLs: preserved learnings first (so they always survive), then freshly
+ * curated ones, deduped by exact value, capped at {@link LEARNINGS_CAP}.
+ *
+ * Exported for tests and for callers that snapshot learnings around a forge.
+ */
+export async function restoreAgentLearnings(
+  agentsDir: string,
+  preserved: Map<string, string[]>,
+): Promise<void> {
+  for (const [agentId, oldLearnings] of preserved) {
+    const filePath = join(agentsDir, `${agentId}.yaml`);
+    try {
+      const raw = await readFile(filePath, "utf-8");
+      const parsed = yaml.load(raw) as Record<string, unknown> | null;
+      if (!parsed || typeof parsed !== "object") continue;
+      const fresh = Array.isArray(parsed.learnings)
+        ? (parsed.learnings as unknown[]).filter(
+            (l): l is string => typeof l === "string" && l.length > 0,
+          )
+        : [];
+      const merged = [...new Set([...oldLearnings, ...fresh])].slice(0, LEARNINGS_CAP);
+      parsed.learnings = merged;
+      await writeAtomic(filePath, yaml.dump(parsed, YAML_DUMP_OPTS));
+    } catch {
+      // Agent removed by the reforge (or unreadable) — nothing to restore.
+    }
+  }
+}
+
 /**
  * Apply a TeamDiff by re-running the forge pipeline, writing updated
  * manifests and agent configs to disk.
+ *
+ * Existing per-agent learnings are preserved across the rewrite: each
+ * agent YAML's `learnings:` are read before the forge, merged with the
+ * freshly curated ones afterwards, deduped by value, and capped at 8.
  */
 export async function applyDiff(
   projectRoot: string,
@@ -372,8 +447,17 @@ export async function applyDiff(
     return;
   }
 
+  const agentsDir = join(projectRoot, ".agentforge", "agents");
+
+  // Snapshot existing per-agent learnings before the rewrite.
+  const preserved = await readAgentLearnings(agentsDir);
+
   // Re-run forge to write updated files
   await forgeTeam(projectRoot);
+
+  // Merge the snapshot back in (preserved-first, deduped, capped at 8).
+  await restoreAgentLearnings(agentsDir, preserved);
+
   console.log("Team updated successfully.");
 }
 

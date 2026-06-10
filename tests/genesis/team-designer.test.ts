@@ -51,7 +51,7 @@ function makeDomainPack(
   };
 }
 
-function makeAgentTemplate(name: string, model: "opus" | "sonnet" | "haiku" = "sonnet"): AgentTemplate {
+function makeAgentTemplate(name: string, model: "fable" | "opus" | "sonnet" | "haiku" = "sonnet"): AgentTemplate {
   return {
     name,
     model,
@@ -226,6 +226,42 @@ describe("designTeam", () => {
 
       expect(manifest.model_routing.haiku).toContain("coder");
       expect(manifest.model_routing.sonnet).not.toContain("coder");
+    });
+
+    it("accepts 'fable' from a template and emits the fable routing bucket", () => {
+      const brief = makeProjectBrief();
+      const pack = makeDomainPack({
+        name: "software",
+        agents: { strategic: ["epic-planner"], implementation: ["coder"], quality: [], utility: [] },
+      });
+      const domainPacks = new Map<DomainId, DomainPack>([["software", pack]]);
+
+      // Template pins the strategist to the fable tier
+      const templateMap = new Map<string, AgentTemplate>([
+        ["epic-planner", makeAgentTemplate("epic-planner", "fable")],
+      ]);
+      const templates = new Map<DomainId, Map<string, AgentTemplate>>([
+        ["software", templateMap],
+      ]);
+
+      const manifest = designTeam(brief, ["software"], domainPacks, templates);
+
+      expect(manifest.model_routing.fable).toContain("epic-planner");
+      expect(manifest.model_routing.opus).not.toContain("epic-planner");
+      expect(manifest.model_routing.sonnet).toContain("coder");
+    });
+
+    it("omits the fable bucket entirely when no agent is pinned to it", () => {
+      const brief = makeProjectBrief();
+      const pack = makeDomainPack({
+        name: "software",
+        agents: { strategic: [], implementation: ["coder"], quality: [], utility: [] },
+      });
+      const domainPacks = new Map<DomainId, DomainPack>([["software", pack]]);
+
+      const manifest = designTeam(brief, ["software"], domainPacks, new Map());
+
+      expect(manifest.model_routing).not.toHaveProperty("fable");
     });
   });
 
