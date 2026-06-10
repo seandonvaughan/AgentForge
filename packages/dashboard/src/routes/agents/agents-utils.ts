@@ -6,10 +6,19 @@
  * browser bundles" guard.
  */
 
-export type CapabilityTier = 'opus' | 'sonnet' | 'haiku';
+export type CapabilityTier = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
+/** Provider family that serves the resolved model id. Claude is primary (v24). */
+export type ModelProvider = 'claude' | 'codex-cli';
+
+/**
+ * Resolved runtime model profile for an agent. The interface name retains the
+ * historical `Codex*` prefix to limit call-site churn; the shape is
+ * provider-neutral — `provider` reflects the family that actually serves the
+ * resolved `modelId` (Claude-primary, codex only on explicit override).
+ */
 export interface CodexModelProfile {
-  provider: 'codex-cli';
+  provider: ModelProvider;
   tier: CapabilityTier;
   modelId: string;
   effort: string;
@@ -40,14 +49,14 @@ export interface AgentListItem {
  *
  * @param agent       - The agent to test.
  * @param search      - Case-insensitive substring search across name/description/team.
- * @param filterModel - Capability tier filter ('', 'opus', 'sonnet', 'haiku').
+ * @param filterModel - Capability tier filter ('', 'fable', 'opus', 'sonnet', 'haiku').
  * @param filterTeam  - Team filter ('' = all, '__unassigned__' = null-team agents,
  *                      other string = exact team name match).
  */
 export function matchesAgentFilter(
   agent: AgentListItem,
   search: string,
-  filterModel: '' | 'opus' | 'sonnet' | 'haiku',
+  filterModel: '' | CapabilityTier,
   filterTeam: string,
 ): boolean {
   const q = search.toLowerCase();
