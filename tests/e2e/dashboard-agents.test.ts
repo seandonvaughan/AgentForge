@@ -122,7 +122,7 @@ test.describe('Agents List Page', () => {
 
     await expect(page).toHaveURL(/\/runner\?agentId=cli-engineer/);
     await expect(page.locator('#agent-select')).toHaveValue('cli-engineer');
-    await expect(page.locator('.cost-callout')).toContainText(/gpt-5\.3-codex|high/i);
+    await expect(page.locator('.cost-callout')).toContainText(/claude-sonnet-4-6|high/i);
   });
 
   test('agent detail config editor saves raw YAML through the management API', async ({ page }) => {
@@ -167,6 +167,9 @@ test.describe('Agents List Page', () => {
 
     await page.getByRole('button', { name: 'Edit config' }).click();
     await expect(page.getByRole('tab', { name: 'Config' })).toHaveAttribute('aria-selected', 'true');
+    // v25: the raw YAML editor lives in the collapsed "Advanced: raw YAML"
+    // section beneath the structured editor — expand it first.
+    await page.getByRole('button', { name: /advanced: raw yaml/i }).click();
     const editor = page.getByLabel('Agent YAML configuration');
     await expect(editor).toBeVisible();
 
@@ -187,8 +190,9 @@ test.describe('Agents List Page', () => {
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
 
-    // Resolved Codex model/effort chips must appear on rows.
-    await expect(table).toContainText(/gpt-5\.(5|4-mini|3-codex)/);
+    // Resolved model/effort chips must appear on rows (Claude-primary ids;
+    // gpt-* only when a codex run actually served).
+    await expect(table).toContainText(/claude-(fable-5|opus-4-8|sonnet-4-6|haiku-4-5)/);
     await expect(table).toContainText(/xhigh|high|medium/i);
   });
 
