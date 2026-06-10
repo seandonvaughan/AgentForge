@@ -31,33 +31,32 @@ afterEach(() => {
 // writeKnowledgeEntry
 // ---------------------------------------------------------------------------
 
-describe('writeKnowledgeEntry — basic extraction', () => {
+describe('writeKnowledgeEntry — note-only default (v25)', () => {
   it('returns [] for empty text', () => {
     const entities = writeKnowledgeEntry(tmpRoot, { text: '', source: 'audit' });
     expect(entities).toHaveLength(0);
   });
 
-  it('extracts CamelCase identifiers as entities', () => {
+  it('persists exactly ONE note entity by default (no term soup)', () => {
     const entities = writeKnowledgeEntry(tmpRoot, {
       text: 'The KnowledgeGraph is built by EntityExtractor and RelationshipMapper.',
       source: 'audit',
     });
-    const names = entities.map(e => e.name);
-    expect(names).toContain('KnowledgeGraph');
-    expect(names).toContain('EntityExtractor');
-    expect(names).toContain('RelationshipMapper');
+    expect(entities).toHaveLength(1);
+    expect(entities[0]!.properties.kind).toBe('note');
+    expect(entities[0]!.description).toContain('KnowledgeGraph');
   });
 
-  it('extracts quoted strings as entities', () => {
+  it('writes nothing when the text is too short for a note (<20 chars)', () => {
     const entities = writeKnowledgeEntry(tmpRoot, {
-      text: 'Phase "audit-phase" and "review-phase" both need wiring.',
+      text: 'TooShort here',
       source: 'audit',
     });
-    const names = entities.map(e => e.name);
-    expect(names.some(n => n.includes('audit-phase') || n.includes('review-phase'))).toBe(true);
+    expect(entities).toHaveLength(0);
+    expect(loadKnowledgeEntities(tmpRoot)).toHaveLength(0);
   });
 
-  it('attaches source, cycleId and tags as properties', () => {
+  it('attaches source, cycleId and tags to the note entity', () => {
     const entities = writeKnowledgeEntry(tmpRoot, {
       text: 'AuditPhase findings produced by ResearcherAgent.',
       source: 'audit',
@@ -81,27 +80,65 @@ describe('writeKnowledgeEntry — basic extraction', () => {
       expect(e.id).toMatch(/^[0-9a-f-]{36}$/);
     }
   });
+});
 
-  it('deduplicates the same name (case-insensitive)', () => {
+describe('writeKnowledgeEntry — opt-in term extraction (extractTerms: true)', () => {
+  it('extracts CamelCase identifiers as entities', () => {
+    const entities = writeKnowledgeEntry(tmpRoot, {
+      text: 'The KnowledgeGraph is built by EntityExtractor and RelationshipMapper.',
+      source: 'audit',
+      extractTerms: true,
+    });
+    const names = entities.map(e => e.name);
+    expect(names).toContain('KnowledgeGraph');
+    expect(names).toContain('EntityExtractor');
+    expect(names).toContain('RelationshipMapper');
+  });
+
+  it('extracts quoted strings as entities', () => {
+    const entities = writeKnowledgeEntry(tmpRoot, {
+      text: 'Phase "audit-phase" and "review-phase" both need wiring.',
+      source: 'audit',
+      extractTerms: true,
+    });
+    const names = entities.map(e => e.name);
+    expect(names.some(n => n.includes('audit-phase') || n.includes('review-phase'))).toBe(true);
+  });
+
+  it('still appends the full-text note entity alongside the terms', () => {
+    const entities = writeKnowledgeEntry(tmpRoot, {
+      text: 'SprintPlanner delegates execution to ExecutePhase handlers.',
+      source: 'audit',
+      extractTerms: true,
+    });
+    const notes = entities.filter(e => e.properties.kind === 'note');
+    expect(notes).toHaveLength(1);
+    expect(entities.length).toBeGreaterThan(1); // terms + note
+  });
+
+  it('deduplicates the same term name (case-insensitive)', () => {
     // "AuditPhase" and "auditphase" would normalise to the same entity.
     const entities = writeKnowledgeEntry(tmpRoot, {
       text: 'AuditPhase is managed by AuditPhase. The AuditPhase runs first.',
       source: 'audit',
+      extractTerms: true,
     });
     const names = entities.map(e => e.name.toLowerCase());
     const uniqueNames = new Set(names);
     expect(uniqueNames.size).toBe(names.length); // no duplicates after dedup
   });
 
-  it('respects maxEntities cap', () => {
+  it('respects maxEntities cap for the extracted terms', () => {
     // Generate text with many unique CamelCase words
     const words = Array.from({ length: 50 }, (_, i) => `ModuleAlpha${i}`).join(' ');
     const entities = writeKnowledgeEntry(tmpRoot, {
       text: words,
       source: 'audit',
       maxEntities: 5,
+      extractTerms: true,
     });
-    expect(entities.length).toBeLessThanOrEqual(5);
+    const terms = entities.filter(e => e.properties.kind !== 'note');
+    expect(terms.length).toBeLessThanOrEqual(5);
   });
 });
 
@@ -229,6 +266,7 @@ describe('write → load round-trip', () => {
     const written = writeKnowledgeEntry(tmpRoot, {
       text: 'ResearcherAgent produces findings.',
       source: 'audit',
+      extractTerms: true,
     });
     const agentEntity = written.find(e => e.name === 'ResearcherAgent');
     expect(agentEntity).toBeDefined();

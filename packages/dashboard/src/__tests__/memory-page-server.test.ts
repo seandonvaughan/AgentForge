@@ -269,6 +269,70 @@ describe('_readMemoryEntries — JSONL reading', () => {
   });
 });
 
+// ── _readMemoryEntries — per-agent memory (v25: memory/agents/*.jsonl) ───────
+
+describe('_readMemoryEntries — per-agent memory files (v25)', () => {
+  function writeAgentJsonlFile(agentId: string, lines: unknown[]): void {
+    const dir = join(makeMemoryDir(), 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${agentId}.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+  }
+
+  it('picks up memory/agents/*.jsonl entries as type agent-memory with agentId from filename', () => {
+    writeAgentJsonlFile('cli-engineer', [
+      { id: 'am-1', kind: 'self-note', value: 'Always register new v5 routes in both server paths.', createdAt: '2026-06-01T00:00:00Z', cycleId: 'cycle-1', itemId: 'item-1' },
+    ]);
+
+    const result = _readMemoryEntries(tmpRoot, {});
+    expect(result.entries).toHaveLength(1);
+    const entry = result.entries[0]!;
+    expect(entry.type).toBe('agent-memory');
+    expect(entry.agentId).toBe('cli-engineer');
+    expect(entry.kind).toBe('self-note');
+    expect(entry.cycleId).toBe('cycle-1');
+    expect(entry.itemId).toBe('item-1');
+    expect(result.agents).toContain('cli-engineer');
+    expect(result.types).toContain('agent-memory');
+  });
+
+  it('preserves the item-outcome kind and outcome field', () => {
+    writeAgentJsonlFile('coder', [
+      { id: 'am-2', kind: 'item-outcome', value: 'completed "thing" (1 attempt, $0.10)', createdAt: '2026-06-01T00:00:00Z', cycleId: 'cycle-9', itemId: 'item-9', outcome: 'completed' },
+    ]);
+
+    const result = _readMemoryEntries(tmpRoot, {});
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]!.kind).toBe('item-outcome');
+    expect(result.entries[0]!.outcome).toBe('completed');
+  });
+
+  it('merges per-agent entries alongside shared-pool JSONL entries', () => {
+    writeJsonlFile('gate-verdict.jsonl', [
+      { id: 'gv-1', type: 'gate-verdict', value: '{}', createdAt: '2026-05-02T00:00:00Z' },
+    ]);
+    writeAgentJsonlFile('coder', [
+      { id: 'am-3', kind: 'self-note', value: 'A lesson worth keeping around.', createdAt: '2026-06-01T00:00:00Z' },
+    ]);
+
+    const result = _readMemoryEntries(tmpRoot, {});
+    expect(result.entries.map(e => e.id).sort()).toEqual(['am-3', 'gv-1']);
+  });
+
+  it('skips malformed lines and entries without an id in per-agent files', () => {
+    const dir = join(makeMemoryDir(), 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'coder.jsonl'), [
+      '{ not valid json :::',
+      JSON.stringify({ kind: 'self-note', value: 'missing id' }),
+      JSON.stringify({ id: 'ok-1', kind: 'self-note', value: 'valid lesson here', createdAt: '2026-06-01T00:00:00Z' }),
+    ].join('\n') + '\n');
+
+    const result = _readMemoryEntries(tmpRoot, {});
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]!.id).toBe('ok-1');
+  });
+});
+
 // ── _readMemoryEntries — merge and deduplication ──────────────────────────────
 
 describe('_readMemoryEntries — JSONL + curated merge', () => {
