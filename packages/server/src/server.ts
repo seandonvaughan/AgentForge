@@ -43,6 +43,9 @@ import { registerFlywheelContinuousImprovementRoutes } from './routes/v5/flywhee
 import { cyclePrsRoutes } from './routes/v5/cycle-prs.js';
 import { cycleCostBreakdownRoutes } from './routes/v5/cycle-cost-breakdown.js';
 import { qualityRoutes } from './routes/v5/quality.js';
+import { cycleDecompositionRoutes } from './routes/v5/cycle-decomposition.js';
+import { cycleEpicReviewRoutes } from './routes/v5/cycle-epic-review.js';
+import { cycleSpendReportRoutes } from './routes/v5/cycle-spend-report.js';
 import { sendContainedStaticFile } from './lib/static-files.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -259,6 +262,14 @@ export async function createServerV5(options: ServerOptionsV5 = {}) {
   // Guard: registerV5Routes already calls qualityRoutes in adapter mode.
   if (!options.adapter || !options.registry) {
     await qualityRoutes(app, { projectRoot });
+  }
+
+  // ── Epic-artifact endpoints (decomposition / epic-review / spend-report) ──
+  // Guard: registerV5Routes already registers these in adapter mode.
+  if (!options.adapter || !options.registry) {
+    await cycleDecompositionRoutes(app, { projectRoot });
+    await cycleEpicReviewRoutes(app, { projectRoot });
+    await cycleSpendReportRoutes(app, { projectRoot });
   }
 
   // ── Unified keyword search (sessions, agents, sprints, cycles, memory) ────────

@@ -66,6 +66,9 @@ import { runStreamRoutes } from './run-stream.js';
 import { cyclePrsRoutes } from './cycle-prs.js';
 import { cycleCostBreakdownRoutes } from './cycle-cost-breakdown.js';
 import { qualityRoutes } from './quality.js';
+import { cycleDecompositionRoutes } from './cycle-decomposition.js';
+import { cycleEpicReviewRoutes } from './cycle-epic-review.js';
+import { cycleSpendReportRoutes } from './cycle-spend-report.js';
 // === wave5:T4 ===
 import { durabilityRoutes } from './durability.js';
 // === /wave5:T4 ===
@@ -561,6 +564,11 @@ export async function registerV5Routes(
 
   // ── Quality metrics (step-scores, aggregates, skill-effectiveness) ────────
   await qualityRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+
+  // ── Epic-artifact endpoints (decomposition / epic-review / spend-report) ──
+  await cycleDecompositionRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await cycleEpicReviewRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
+  await cycleSpendReportRoutes(app, opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {});
 
   // === wave5:T4 ===
   // ── Durability — checkpoint list + resume UX ─────────────────────────────
