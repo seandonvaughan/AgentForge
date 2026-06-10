@@ -325,7 +325,7 @@ test.describe('Agents List Page', () => {
     if (rowCount > 0) {
       // Get first row and verify it has an opus badge or model indicator
       const firstRow = rows.first();
-      await expect(firstRow).toContainText(/gpt-5\.5|xhigh/i);
+      await expect(firstRow).toContainText(/claude-opus-4-8|opus/i);
     }
   });
 
