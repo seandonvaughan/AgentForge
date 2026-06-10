@@ -1049,6 +1049,25 @@ export async function runExecutePhase(
       ? ItemCheckpointWriter.getCompletedItemIds(ctx.projectRoot, ctx.cycleId)
       : new Set();
 
+  // Cycle 5242ca92 — on resume, the checkpoint contract (#282) is the ONLY
+  // authority on what is skippable: items whose id is NOT in completedItemIds
+  // are dispatched regardless of the status the failed attempt persisted into
+  // plan.json ('failed', 'blocked', 'in_progress', ...). Reset those stored
+  // statuses to 'pending' in memory so no status-based check downstream can
+  // drop a resumable item from the dispatch set.
+  if (options.resume === true) {
+    for (const item of items) {
+      if (resumeCompletedIds.has(item.id)) continue;
+      if (item.status !== 'pending') {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[execute-phase] resume: item ${item.id} status '${item.status}' → 'pending' (not in checkpoint completedItemIds — re-dispatching)`,
+        );
+        item.status = 'pending';
+      }
+    }
+  }
+
   // ── v6.7.4 Load Assessment ──────────────────────────────────────────────
   // Pick a parallelism that respects BOTH the configured ceiling and the
   // sprint's actual workload. The "team should assess the load" — instead
@@ -1948,8 +1967,18 @@ export async function runExecutePhase(
   // the previous wave's merged code. Flat cycles skip all of this.
   const epicParentId = items.find((it) => it.parentEpicId)?.parentEpicId;
   const integrationBranch = epicParentId ? epicIntegrationBranchName(epicParentId) : undefined;
+  // Cycle 5242ca92 — a resumed epic where EVERY item is already in the
+  // checkpoint's completedItemIds dispatches nothing, so no per-item worktrees
+  // are needed; but the release stage still requires the epicIntegration
+  // signal (branch + epicId) on the phase result to push codex/epic-<id> and
+  // open the single epic PR. Without it, the cycle-runner fell through to the
+  // legacy main-tree release. ensureIntegrationWorktree is idempotent
+  // (wave-integration.ts:43-62), so resolve the EXISTING integration branch /
+  // worktree in this all-skipped case even when no worktree pool is wired.
+  const allItemsSkippedViaResume =
+    items.length > 0 && items.every((it) => resumeCompletedIds.has(it.id));
   let integrationWorktreePath: string | undefined;
-  if (integrationBranch && worktreePool) {
+  if (integrationBranch && (worktreePool || allItemsSkippedViaResume)) {
     try {
       integrationWorktreePath = await ensureIntegrationWorktree(
         ctx.projectRoot,

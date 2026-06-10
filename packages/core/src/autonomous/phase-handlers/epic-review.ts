@@ -101,6 +101,24 @@ export interface EpicReviewArtifact {
 const TRIAGE_PREFIX =
   '[TRIAGE — review output unparseable; deterministic VERIFY remains the release authority]';
 
+/**
+ * Provider failover chain for BOTH epic-review runtime calls (primary review +
+ * triage re-ask). Cycle 5242ca92 produced two unparseable verdicts in a row on
+ * the CLI transport (schemaValidationOk:false — the CLI can only append the
+ * schema text to the system prompt). The Anthropic SDK transport enforces,
+ * validates, and retries structured output, so it is tried FIRST whenever
+ * ANTHROPIC_API_KEY is configured; otherwise failover lands on the CLI
+ * transport exactly as before.
+ *
+ * SPLIT by call: the PRIMARY review must INSPECT the integration branch with
+ * read-only git/Bash tools, and the SDK transport is text-only — so the
+ * tool-capable CLI transport leads for the primary call. The TRIAGE RE-ASK
+ * needs no tools (it only reformats the prior output into the schema), so the
+ * SDK leads there to get enforced structured output where it matters most.
+ */
+const EPIC_REVIEW_PRIMARY_PROVIDER_PREFERENCE = ['claude-code-compat', 'anthropic-sdk'] as const;
+const EPIC_REVIEW_TRIAGE_PROVIDER_PREFERENCE = ['anthropic-sdk', 'claude-code-compat'] as const;
+
 interface PlanItemLite {
   id: string;
   title: string;
@@ -358,6 +376,7 @@ export async function runEpicReview(
       allowedTools,
       codexSandbox: 'read-only',
       capabilityTier: 'fable',
+      providerPreference: [...EPIC_REVIEW_PRIMARY_PROVIDER_PREFERENCE],
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       outputSchema: EPIC_REVIEW_SCHEMA,
     });
@@ -395,6 +414,7 @@ export async function runEpicReview(
         allowedTools: ['Read'],
         codexSandbox: 'read-only',
         capabilityTier: 'sonnet',
+        providerPreference: [...EPIC_REVIEW_TRIAGE_PROVIDER_PREFERENCE],
         outputSchema: EPIC_REVIEW_SCHEMA,
       });
       const triageOutput = typeof triageResult?.output === 'string' ? triageResult.output : '';

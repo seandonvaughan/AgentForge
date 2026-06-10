@@ -151,6 +151,23 @@ describe('runEpicReview — APPROVE via schemaValidation.ok', () => {
     expect(calls[0]!.opts.capabilityTier).toBe('fable');
     expect(calls[0]!.opts.codexSandbox).toBe('read-only');
   });
+
+  it('prefers the SDK transport for structured output (cycle 5242ca92)', async () => {
+    // Two production reviews came back unparseable on the CLI transport
+    // (schemaValidationOk:false — the CLI can only append the schema text to
+    // the system prompt). The SDK transport enforces+validates+retries
+    // structured output, so it must lead the failover chain; the CLI remains
+    // the fallback when no ANTHROPIC_API_KEY is configured.
+    writePlan([{ id: 'i1', title: 'item one' }]);
+    writeExecute();
+    const { ctx, calls } = makeCtx(() => ({
+      output: '{"verdict":"APPROVE","rationale":"ok","faultedItems":[]}',
+      costUsd: 0.1,
+      schemaValidation: { ok: true },
+    }));
+    await runEpicReview(ctx);
+    expect(calls[0]!.opts.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+  });
 });
 
 describe('runEpicReview — REQUEST_CHANGES with valid itemIds', () => {
@@ -246,6 +263,10 @@ describe('runEpicReview — unparseable output → triage re-ask → still unpar
     expect(calls).toHaveLength(2);
     // The triage re-ask uses the sonnet tier.
     expect(calls[1]!.opts.capabilityTier).toBe('sonnet');
+    // Cycle 5242ca92 — BOTH calls lead with the SDK transport so structured
+    // output is enforced/validated/retried whenever an API key is configured.
+    expect(calls[0]!.opts.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+    expect(calls[1]!.opts.providerPreference).toEqual(['anthropic-sdk', 'claude-code-compat']);
 
     const epicReview = JSON.parse(readFileSync(join(phasesDir(), 'epic-review.json'), 'utf8'));
     expect(epicReview.verdict).toBe('TRIAGE');
