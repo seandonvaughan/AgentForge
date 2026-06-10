@@ -41,11 +41,13 @@ export interface CostReport {
  * Per-million-token pricing for each model tier.
  * Based on approximate Anthropic API pricing.
  */
+// Kept in lockstep with the canonical MODEL_PRICING in
+// packages/core/src/agent-runtime/types.ts (Anthropic models overview, 2026-06).
 export const MODEL_COSTS: Record<ModelTier, { input: number; output: number }> = {
   fable: { input: 10.0, output: 50.0 },
-  opus: { input: 15.0, output: 75.0 },
+  opus: { input: 5.0, output: 25.0 },
   sonnet: { input: 3.0, output: 15.0 },
-  haiku: { input: 0.25, output: 1.25 },
+  haiku: { input: 1.0, output: 5.0 },
 };
 
 /**

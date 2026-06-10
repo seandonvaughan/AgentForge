@@ -1,3 +1,4 @@
+import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance } from 'fastify';
 import {
   AgentRuntime,
@@ -66,11 +67,29 @@ function recordAgentRouteInvokeMemory(input: {
   }
 }
 
+// Per-IP rate-limit settings (mirrors cycle-prs.ts; recognised by CodeQL
+// js/missing-rate-limiting).
+const RATE_LIMIT_MAX = 60;          // 60 req/min per remote address
+const RATE_LIMIT_WINDOW = '1 minute';
+
 export async function agentRoutes(
   app: FastifyInstance,
   opts: { adapter?: WorkspaceAdapter; projectRoot: string },
 ): Promise<void> {
   const agentforgeDir = join(opts.projectRoot, '.agentforge');
+
+  // Register @fastify/rate-limit once per server instance; re-registration
+  // from another route module is a guarded no-op (cycle-prs.ts pattern).
+  try {
+    await app.register(rateLimit, {
+      global: false,
+      max: RATE_LIMIT_MAX,
+      timeWindow: RATE_LIMIT_WINDOW,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/already registered/i.test(msg)) throw err;
+  }
 
   // GET /api/v5/agents — list agents from .agentforge/agents/*.yaml
   // Returns rich display data (name, model, description, role) from YAML directly.
@@ -236,7 +255,16 @@ export async function agentRoutes(
   // SQL table fed by the in-server executor is stale because `agentforge cycle
   // run` doesn't write there. Powers the /agents page sparklines + lastActive
   // + spend KPIs that were showing zeros.
-  app.get('/api/v5/agents/activity', async (_req, reply) => {
+  app.get(
+    '/api/v5/agents/activity',
+    {
+      config: {
+        // 60 req/min per remote address — this handler walks every cycle's
+        // phase artifacts on disk. Recognized by CodeQL js/missing-rate-limiting.
+        rateLimit: { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW },
+      },
+    },
+    async (_req, reply) => {
     const cyclesDir = join(agentforgeDir, 'cycles');
     if (!existsSync(cyclesDir)) return reply.send({ data: [], meta: { total: 0, windowHours: 24 } });
 

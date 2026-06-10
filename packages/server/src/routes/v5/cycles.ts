@@ -11,6 +11,7 @@
 // character set. Every file path is resolved with path.resolve and required
 // to start with the cycles base dir so `..` / symlink tricks can't escape.
 
+import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance } from 'fastify';
 import {
   existsSync,
@@ -1072,7 +1073,29 @@ export async function cyclesRoutes(
   // Lists objective rehearsals from `agentforge cycle preview --objective`
   // (.agentforge/previews/<dir>/preview.json). Read-only; previews are not
   // cycles and deliberately live outside .agentforge/cycles/.
-  app.get('/api/v5/previews', async (_req, reply) => {
+  // Register @fastify/rate-limit once per server instance; re-registration
+  // from another route module is a guarded no-op (cycle-prs.ts pattern).
+  try {
+    await app.register(rateLimit, {
+      global: false,
+      max: 60,
+      timeWindow: '1 minute',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/already registered/i.test(msg)) throw err;
+  }
+
+  app.get(
+    '/api/v5/previews',
+    {
+      config: {
+        // 60 req/min per remote address — reads every preview artifact on
+        // disk. Recognized by CodeQL js/missing-rate-limiting.
+        rateLimit: { max: 60, timeWindow: '1 minute' },
+      },
+    },
+    async (_req, reply) => {
     const base = resolve(join(opts.projectRoot, '.agentforge', 'previews'));
     if (!existsSync(base)) return reply.send({ previews: [] });
 
@@ -1117,7 +1140,11 @@ export async function cyclesRoutes(
         });
       } catch { /* skip unparseable */ }
     }
-    rows.sort((a, b) => ((a.createdAt ?? a.id) < (b.createdAt ?? b.id) ? 1 : -1));
+    rows.sort((a, b) => {
+      const ka = a.createdAt ?? a.id;
+      const kb = b.createdAt ?? b.id;
+      return ka < kb ? 1 : ka > kb ? -1 : 0;
+    });
     return reply.send({ previews: rows });
   });
 

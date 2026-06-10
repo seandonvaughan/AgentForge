@@ -56,9 +56,20 @@ export interface AppendAgentMemoryInput {
 
 const SAFE_AGENT_ID = /^[a-zA-Z0-9_-]+$/;
 
+/**
+ * Match-then-use sanitizer (repo convention): return the REGEX MATCH, never
+ * the raw input, so static analyzers (CodeQL js/path-injection) can trace
+ * that the joined segment is provably traversal-free.
+ */
+function safeAgentFileName(agentId: string): string | null {
+  const m = SAFE_AGENT_ID.exec(agentId);
+  return m ? `${m[0]}.jsonl` : null;
+}
+
 function agentMemoryPath(projectRoot: string, agentId: string): string | null {
-  if (!SAFE_AGENT_ID.test(agentId)) return null;
-  return join(projectRoot, '.agentforge', 'memory', 'agents', `${agentId}.jsonl`);
+  const fileName = safeAgentFileName(agentId);
+  if (!fileName) return null;
+  return join(projectRoot, '.agentforge', 'memory', 'agents', fileName);
 }
 
 // Simple exclusive lock mirroring memory/types.ts — O_EXCL create, best-effort.
@@ -126,7 +137,10 @@ export function appendAgentMemory(
     const locked = acquireLock(lockPath);
     try {
       appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf8');
-      compactIfNeeded(filePath);
+      // Compaction rewrites the whole file — only safe with the lock held;
+      // an unlocked rewrite could race a concurrent writer and drop entries.
+      // (An append without the lock is still an atomic O_APPEND write.)
+      if (locked) compactIfNeeded(filePath);
     } finally {
       if (locked) releaseLock(lockPath);
     }
@@ -144,7 +158,13 @@ function compactIfNeeded(filePath: string): void {
   if (entries.length <= AGENT_MEMORY_MAX_ENTRIES) return;
 
   const byValue = new Map<string, AgentMemoryEntry>();
-  for (const e of entries) byValue.set(e.value, e); // later lines overwrite
+  for (const e of entries) {
+    // delete-then-set moves re-seen values to the END of insertion order —
+    // Map#set alone keeps the FIRST position, so slice(-cap) would wrongly
+    // treat a recently re-affirmed note as old and drop it.
+    byValue.delete(e.value);
+    byValue.set(e.value, e);
+  }
   const compacted = [...byValue.values()].slice(-AGENT_MEMORY_MAX_ENTRIES);
 
   const tmp = `${filePath}.tmp`;
@@ -173,8 +193,9 @@ export function readAgentMemoryFromDir(
   agentId: string,
   limit = 5,
 ): AgentMemoryEntry[] {
-  if (!SAFE_AGENT_ID.test(agentId)) return [];
-  const filePath = join(memoryDir, 'agents', `${agentId}.jsonl`);
+  const fileName = safeAgentFileName(agentId);
+  if (!fileName) return [];
+  const filePath = join(memoryDir, 'agents', fileName);
   if (!existsSync(filePath)) return [];
   try {
     return parseLines(readFileSync(filePath, 'utf8')).slice(-limit).reverse();
