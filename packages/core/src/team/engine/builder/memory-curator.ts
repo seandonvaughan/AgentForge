@@ -25,10 +25,16 @@ export interface MemoryEntry {
   createdAt: string;
   source?: string;
   tags?: string[];
+  /**
+   * Owning agent id when the entry came from a per-agent memory file
+   * (`.agentforge/memory/agents/<agentId>.jsonl`). Absent for shared-pool
+   * entries.
+   */
+  agentId?: string;
 }
 
 export interface CuratedLearningOptions {
-  /** Max number of lessons to return for this agent. Default: 12. */
+  /** Max number of lessons to return for this agent. Default: 8 (the documented cap). */
   maxLessons?: number;
   /** Cap on each lesson's character length. Longer values are truncated. Default: 200. */
   maxLessonChars?: number;
@@ -83,6 +89,12 @@ const ROLE_TAG_AFFINITY: Record<string, string[]> = {
 };
 
 const ROLE_TAG_BOOST = 3.0;
+/**
+ * Boost for entries that live in the agent's OWN per-agent memory file
+ * (`memory/agents/<agentId>.jsonl`). Deliberately above ROLE_TAG_BOOST and
+ * SEVERITY_BOOST so an agent's own history outranks shared-pool affinity hits.
+ */
+const OWN_AGENT_BOOST = 8.0;
 const SEVERITY_BOOST: Record<string, number> = {
   critical: 4.0,
   major: 2.5,
@@ -93,10 +105,37 @@ const SEVERITY_BOOST: Record<string, number> = {
 // Loading
 // ---------------------------------------------------------------------------
 
+/** Parse one JSONL file's lines into entries, tolerating malformed lines. */
+function parseJsonlFile(path: string, agentId?: string): MemoryEntry[] {
+  let content: string;
+  try {
+    content = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+  const entries: MemoryEntry[] = [];
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as MemoryEntry;
+      if (parsed && typeof parsed.value === "string") {
+        entries.push(agentId ? { ...parsed, agentId } : parsed);
+      }
+    } catch {
+      // malformed line — skip
+    }
+  }
+  return entries;
+}
+
 /**
- * Read every `*.jsonl` file under `.agentforge/memory/` and return parsed
- * entries. Lines that fail to parse are silently dropped (the file may
- * contain partial writes from interrupted cycles).
+ * Read every `*.jsonl` file under `.agentforge/memory/` (the shared pool)
+ * plus every per-agent file under `.agentforge/memory/agents/` and return
+ * parsed entries. Per-agent entries are stamped with their `agentId` (taken
+ * from the file name) so scoring can weight an agent's OWN history above
+ * shared-pool affinity matches. Lines that fail to parse are silently
+ * dropped (the file may contain partial writes from interrupted cycles).
  */
 export function loadMemoryEntries(projectRoot: string): MemoryEntry[] {
   const memDir = join(projectRoot, ".agentforge", "memory");
@@ -105,26 +144,19 @@ export function loadMemoryEntries(projectRoot: string): MemoryEntry[] {
   const entries: MemoryEntry[] = [];
   for (const file of readdirSync(memDir)) {
     if (!file.endsWith(".jsonl")) continue;
-    const path = join(memDir, file);
-    let content: string;
-    try {
-      content = readFileSync(path, "utf8");
-    } catch {
-      continue;
-    }
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const parsed = JSON.parse(trimmed) as MemoryEntry;
-        if (parsed && typeof parsed.value === "string") {
-          entries.push(parsed);
-        }
-      } catch {
-        // malformed line — skip
-      }
+    entries.push(...parseJsonlFile(join(memDir, file)));
+  }
+
+  // Per-agent memory: memory/agents/<agentId>.jsonl
+  const agentsDir = join(memDir, "agents");
+  if (existsSync(agentsDir)) {
+    for (const file of readdirSync(agentsDir)) {
+      if (!file.endsWith(".jsonl")) continue;
+      const agentId = file.slice(0, -".jsonl".length);
+      entries.push(...parseJsonlFile(join(agentsDir, file), agentId));
     }
   }
+
   return entries;
 }
 
@@ -188,6 +220,16 @@ function scoreEntry(
 ): ScoredEntry {
   let score = 0;
 
+  // Per-agent ownership — an agent's OWN memory entries outrank any
+  // shared-pool affinity match; another agent's private entries never leak.
+  if (entry.agentId) {
+    const normalizedName = agent.name.toLowerCase().replace(/\s+/g, "-");
+    if (entry.agentId.toLowerCase() !== normalizedName) {
+      return { entry, score: 0, preview: entry.value };
+    }
+    score += OWN_AGENT_BOOST;
+  }
+
   // Tag affinity
   const tags = entry.tags ?? [];
   for (const tag of tags) {
@@ -234,7 +276,8 @@ export function curateLearnings(
   entries: MemoryEntry[],
   options: CuratedLearningOptions = {},
 ): string[] {
-  const maxLessons = options.maxLessons ?? 12;
+  // 8 is the documented per-agent lessons cap (see CLAUDE.md flywheel notes).
+  const maxLessons = options.maxLessons ?? 8;
   const maxChars = options.maxLessonChars ?? 200;
   const halfLife = options.recencyHalfLifeDays ?? 45;
 

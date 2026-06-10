@@ -45,6 +45,8 @@ export interface AgentDetail {
   effort: string | null;
   systemPrompt: string | null;
   skills: string[];
+  /** Explicit tool allowlist from YAML; empty = inherit from skills. */
+  tools: string[];
   version: string | null;
   seniority: string | null;
   layer: string | null;
@@ -72,7 +74,7 @@ export const load: PageServerLoad = ({ params }: PageServerLoadEvent) => {
 
   const modelRaw = typeof parsed['model'] === 'string' ? parsed['model'] : 'sonnet';
   const model: CapabilityTier =
-    modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
+    modelRaw === 'fable' || modelRaw === 'opus' || modelRaw === 'haiku' ? modelRaw : 'sonnet';
   const effort = typeof parsed['effort'] === 'string' ? parsed['effort'] : null;
 
   const agent: AgentDetail = {
@@ -86,6 +88,7 @@ export const load: PageServerLoad = ({ params }: PageServerLoadEvent) => {
     effort,
     systemPrompt: typeof parsed['system_prompt'] === 'string' ? parsed['system_prompt'] : null,
     skills: asStringArray(parsed['skills']),
+    tools: asStringArray(parsed['tools']),
     version: typeof parsed['version'] === 'string' ? parsed['version'] : null,
     seniority: typeof parsed['seniority'] === 'string' ? parsed['seniority'] : null,
     layer: typeof parsed['layer'] === 'string' ? parsed['layer'] : null,

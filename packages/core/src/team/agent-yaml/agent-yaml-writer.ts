@@ -42,6 +42,7 @@ export function dumpAgentYaml(agent: AgentYaml): string {
   obj["system_prompt"] = agent.system_prompt;
 
   if (agent.skills !== undefined) obj["skills"] = agent.skills;
+  if (agent.tools !== undefined) obj["tools"] = agent.tools;
   if (agent.triggers !== undefined) obj["triggers"] = agent.triggers;
   if (agent.collaboration !== undefined) obj["collaboration"] = agent.collaboration;
   if (agent.context !== undefined) obj["context"] = agent.context;

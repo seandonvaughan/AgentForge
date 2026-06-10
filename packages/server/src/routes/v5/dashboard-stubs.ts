@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
-import { createReadStream, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { getWorkspace } from '@agentforge/core';
 import { readCycleRecord } from '../../lib/cycle-record.js';
 import type { CycleRecord } from '../../lib/cycle-record.js';
+// v25 — best-effort audit trail for the destructive memory-delete endpoint.
+import { openAuditDb, appendAuditEntry } from './audit.js';
 
 // ── Memory display helpers ─────────────────────────────────────────────────
 
@@ -147,14 +149,21 @@ export async function dashboardStubRoutes(
   //
   // Optional query params:
   //   type    — exact match on the entry's `type` field (e.g. "cycle-outcome")
+  //   kind    — exact match on the entry's `kind` field (agent-memory entries:
+  //             'self-note' | 'item-outcome')
   //   since   — ISO-8601 timestamp; only entries with createdAt >= since
   //   agentId — exact match on the entry's `agentId` / `source` field
   //   search  — case-insensitive substring across key, value, summary, tags
+  //   includeTelemetry — '1'/'true' to include lesson-attribution and
+  //             step-scores telemetry entries (excluded by default; they are
+  //             machine-grading exhaust, not operator-facing memory)
   //
   // Response shape:
   //   { data: DashboardMemoryEntry[], agents: string[], types: string[],
   //     meta: { total: number, limit: number } }
   const MEMORY_LIMIT = 200;
+  // v25 — telemetry JSONL stores hidden from the memory browser by default.
+  const TELEMETRY_TYPES = new Set(['lesson-attribution', 'step-scores']);
 
   app.get('/api/v5/memory', {
     config: {
@@ -165,13 +174,20 @@ export async function dashboardStubRoutes(
   }, async (req, reply) => {
     const q = req.query as {
       type?: string;
+      kind?: string;
       since?: string;
       agentId?: string;
       /** Legacy alias for agentId — accepted for backward compatibility. */
       agent?: string;
       search?: string;
+      includeTelemetry?: string;
     };
     const typeFilter = q.type?.trim() ?? '';
+    // v25 — exact match on the agent-memory `kind` field.
+    const kindFilter = q.kind?.trim() ?? '';
+    // v25 — telemetry stores (lesson-attribution, step-scores) are excluded
+    // unless explicitly requested.
+    const includeTelemetry = q.includeTelemetry === '1' || q.includeTelemetry === 'true';
     // Accept both `agentId` (canonical) and `agent` (legacy alias from the
     // memory.html page overlay and the v1 API callers).
     const agentIdFilter = (q.agentId ?? q.agent ?? '').trim();
@@ -196,6 +212,15 @@ export async function dashboardStubRoutes(
       source?: string;
       summary?: string;
       tags?: string[];
+      /**
+       * v25 — real agent-memory fields surfaced to the dashboard:
+       * kind ('self-note' = LEARNED note | 'item-outcome'), plus the item,
+       * cycle and outcome the entry was recorded under.
+       */
+      kind?: string;
+      itemId?: string;
+      cycleId?: string;
+      outcome?: string;
       /**
        * Promoted structured metadata for v10.2+ entries.
        * For review-finding: ReviewFindingMetadata { file, line, severity, summary, fixSuggestion }
@@ -310,6 +335,13 @@ export async function dashboardStubRoutes(
                   source: ownerAgentId,
                   ...(typeof entry.value === 'string' ? { summary: entry.value.slice(0, 160) } : {}),
                   ...(entry.tags !== undefined ? { tags: entry.tags } : {}),
+                  // v25 — surface the REAL agent-memory fields so the
+                  // dashboard can filter LEARNED notes vs item outcomes and
+                  // link entries back to their cycle/item.
+                  ...(entry.kind !== undefined ? { kind: entry.kind } : {}),
+                  ...(entry.itemId !== undefined ? { itemId: entry.itemId } : {}),
+                  ...(entry.cycleId !== undefined ? { cycleId: entry.cycleId } : {}),
+                  ...(entry.outcome !== undefined ? { outcome: entry.outcome } : {}),
                 });
               } catch { /* skip malformed line */ }
             }
@@ -396,23 +428,32 @@ export async function dashboardStubRoutes(
       return tb - ta;
     });
 
-    // Compute agents and types from ALL entries so that the dashboard's
-    // agent-filter dropdown and type-chip row always reflect the full corpus —
-    // not just the first MEMORY_LIMIT rows.  The dashboard's +page.svelte
-    // comment confirms it expects: "batch API computes agents/types from the
-    // FULL corpus before applying filters."
+    // v25 — hide telemetry exhaust (lesson-attribution, step-scores: 61% of a
+    // typical corpus) unless explicitly requested via ?includeTelemetry=1.
+    // Applied before agents/types so the filter chips don't advertise types
+    // that are invisible by default.
+    const visibleEntries = includeTelemetry
+      ? entries
+      : entries.filter(e => !TELEMETRY_TYPES.has(e.type));
+
+    // Compute agents and types from ALL visible entries so that the
+    // dashboard's agent-filter dropdown and type-chip row always reflect the
+    // full corpus — not just the first MEMORY_LIMIT rows.  The dashboard's
+    // +page.svelte comment confirms it expects: "batch API computes
+    // agents/types from the FULL corpus before applying filters."
     const agents = [...new Set(
-      entries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
+      visibleEntries.map(e => e.agentId).filter((a): a is string => Boolean(a)),
     )];
     const types = [...new Set(
-      entries.map(e => e.type).filter((t): t is string => Boolean(t)),
+      visibleEntries.map(e => e.type).filter((t): t is string => Boolean(t)),
     )].sort();
 
     // Apply optional query filters to ALL entries before capping.  This
     // ensures meta.total reflects the true number of matching entries and
     // that large datasets aren't silently truncated before filtering.
-    const filtered = entries.filter(e => {
+    const filtered = visibleEntries.filter(e => {
       if (typeFilter && e.type !== typeFilter) return false;
+      if (kindFilter && e.kind !== kindFilter) return false;
       if (agentIdFilter && e.agentId !== agentIdFilter) return false;
       if (hasSince) {
         const entryMs = e.createdAt ? new Date(e.createdAt).getTime() : 0;
@@ -441,8 +482,88 @@ export async function dashboardStubRoutes(
     });
   });
 
-  app.delete('/api/v5/memory/:id', async (req, reply) => {
-    return reply.send({ ok: true });
+  // DELETE /api/v5/memory/:id — v25, REAL deletion.
+  //
+  // Locates the entry by exact `id` match across .agentforge/memory/*.jsonl
+  // and .agentforge/memory/agents/*.jsonl, then rewrites the owning file
+  // without that line (atomic temp + rename so a crash can never truncate the
+  // store).  Returns 404 when no entry carries the id.  Audit-logged as
+  // 'memory.delete' (best-effort — audit failure never blocks the deletion).
+  app.delete<{ Params: { id: string } }>('/api/v5/memory/:id', {
+    config: {
+      // Same FS-read/write class as GET /api/v5/memory.
+      rateLimit: { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW },
+    },
+  }, async (req, reply) => {
+    const targetId = req.params.id;
+    const memoryDir = join(projectRoot, '.agentforge', 'memory');
+
+    // Collect candidate JSONL files: shared pool first, then per-agent stores.
+    // The user-controlled id is ONLY compared against parsed entry ids —
+    // it never participates in any filesystem path.
+    const candidateFiles: string[] = [];
+    if (existsSync(memoryDir)) {
+      try {
+        for (const f of readdirSync(memoryDir)) {
+          if (f.endsWith('.jsonl')) candidateFiles.push(join(memoryDir, f));
+        }
+      } catch { /* unreadable dir — fall through to 404 */ }
+      const agentsMemDir = join(memoryDir, 'agents');
+      if (existsSync(agentsMemDir)) {
+        try {
+          for (const f of readdirSync(agentsMemDir)) {
+            if (f.endsWith('.jsonl')) candidateFiles.push(join(agentsMemDir, f));
+          }
+        } catch { /* unreadable dir — shared-pool files still searched */ }
+      }
+    }
+
+    for (const filePath of candidateFiles) {
+      try {
+        const lines = readFileSync(filePath, 'utf-8').split('\n');
+        let found = false;
+        const kept: string[] = [];
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let entryId: string | undefined;
+          try {
+            const parsed = JSON.parse(line) as { id?: unknown };
+            entryId = typeof parsed?.id === 'string' ? parsed.id : undefined;
+          } catch { /* malformed line — always kept */ }
+          if (!found && entryId === targetId) {
+            found = true;
+            continue;
+          }
+          kept.push(line);
+        }
+        if (!found) continue;
+
+        // Atomic rewrite: write the surviving lines to a temp sibling, then
+        // rename over the original so readers never observe a partial file.
+        const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+        writeFileSync(tmpPath, kept.length > 0 ? kept.join('\n') + '\n' : '', 'utf-8');
+        renameSync(tmpPath, filePath);
+
+        // Best-effort audit trail (mirrors autonomous-branches.delete).
+        try {
+          const auditDb = openAuditDb(projectRoot);
+          try {
+            appendAuditEntry(auditDb, {
+              actor: 'api',
+              action: 'memory.delete',
+              target: targetId,
+              details: { file: basename(filePath) },
+            });
+          } finally {
+            auditDb.close();
+          }
+        } catch { /* audit is best-effort — never blocks the deletion */ }
+
+        return reply.send({ ok: true, deleted: targetId, file: basename(filePath) });
+      } catch { /* unreadable file — keep searching the rest */ }
+    }
+
+    return reply.status(404).send({ error: 'Memory entry not found', code: 'MEMORY_ENTRY_NOT_FOUND' });
   });
 
   // GET /api/v5/memory/stream — NDJSON streaming endpoint.

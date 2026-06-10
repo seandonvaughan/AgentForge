@@ -48,6 +48,9 @@ import { ItemCheckpointWriter } from '../checkpoint/item-checkpoint.js';
 import { appendLessonAttributions } from '../../memory/lesson-attribution.js';
 import { appendAgentMemory, extractLearnedNotes } from '../../memory/agent-memory.js';
 import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-retrieval.js';
+// v25 — cross-agent learning: LEARNED self-notes also land in the shared
+// knowledge store so other agents' KB retrieval can surface them.
+import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
@@ -1696,6 +1699,12 @@ export async function runExecutePhase(
             ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
           };
           liveResults.set(item.id, completedResult as ItemResult);
+          // Flush the updated cost to execute.json immediately so mid-flight
+          // readers (dashboard Epic tab, spend-report generator) can see this
+          // item's nonzero costUsd before the async worktree operations in the
+          // finally block (commit / push / release) complete.  Without this
+          // early flush, readers see costUsd: 0 until the whole phase ends.
+          snapshotExecuteProgress();
           // Wave 5 T1 — write per-item checkpoint after each successful completion.
           // Fire-and-forget: checkpoint write is non-blocking and never fails the phase.
           enqueueItemCheckpoint(item.id, 'completed', item.assignee);
@@ -1718,6 +1727,20 @@ export async function runExecutePhase(
               cycleId: ctx.cycleId,
               itemId: item.id,
             });
+            // v25 — also persist the LEARNED note to the shared W1 knowledge
+            // store so one agent's lesson reaches other agents' retrieval
+            // (searchKnowledgeNotes injects note entities into prompts).
+            // Non-fatal: a knowledge-write failure must never fail the item.
+            try {
+              writeKnowledgeEntry(ctx.projectRoot, {
+                text: note,
+                source: 'agent-learned',
+                tags: [item.assignee, ...(ctx.cycleId ? [ctx.cycleId] : [])],
+                cycleId: ctx.cycleId,
+              });
+            } catch {
+              // best-effort — never affects the item result
+            }
           }
           return completedResult;
         } catch (err) {
@@ -1769,6 +1792,9 @@ export async function runExecutePhase(
               ...(appliedLessons.length > 0 ? { appliedLessons } : {}),
             };
             liveResults.set(item.id, failedResult as ItemResult);
+            // Flush the failure state immediately (mirrors the success path's
+            // early flush) so mid-flight readers always see up-to-date results.
+            snapshotExecuteProgress();
             // Wave 5 T1 — write per-item checkpoint after each failure (final attempt).
             enqueueItemCheckpoint(item.id, 'failed', item.assignee);
             // W2 — record the failure (with a short error excerpt) in the
