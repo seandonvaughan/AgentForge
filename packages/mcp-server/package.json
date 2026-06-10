@@ -1,7 +1,7 @@
 {
   "name": "@agentforge/mcp-server",
   "version": "10.5.1",
-  "description": "AgentForge MCP server — exposes agent dispatch, KB lookup, and memory query tools",
+  "description": "AgentForge MCP server — exposes agent dispatch, KB lookup, memory query, and objective-cycle tools (epic decomposition, epic review, spend report, agent memory, objective preview)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
