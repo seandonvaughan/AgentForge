@@ -24,6 +24,8 @@ interface ClaudeSetupOptions {
   projectRoot: string;
   /** Override the MCP server entry path (mostly for tests). */
   mcpServerPath?: string;
+  /** Re-emit ALL .claude/agents mirrors (overwrite), not just missing ones. */
+  refresh?: boolean;
 }
 
 /**
@@ -84,20 +86,24 @@ export async function runClaudeSetup(options: ClaudeSetupOptions): Promise<Setup
     }
   }
 
-  // ── 2. Re-emit missing .claude/agents mirrors ─────────────────────────────
+  // ── 2. Re-emit .claude/agents mirrors ─────────────────────────────────────
+  // Default: only the missing ones. With `refresh: true`: ALL mirrors are
+  // rewritten (overwrite), picking up YAML edits made since the last emit.
   const agentsDir = join(projectRoot, '.agentforge', 'agents');
   if (existsSync(agentsDir)) {
     const specs: ClaudeCodeAgentSpec[] = [];
     for (const file of readdirSync(agentsDir)) {
       if (!file.endsWith('.yaml')) continue;
       const id = file.replace(/\.yaml$/, '');
-      if (existsSync(join(projectRoot, '.claude', 'agents', `${id}.md`))) continue;
+      if (!options.refresh && existsSync(join(projectRoot, '.claude', 'agents', `${id}.md`))) continue;
       try {
         const parsed = load(readFileSync(join(agentsDir, file), 'utf8')) as {
           name?: string;
           model?: string;
           description?: string;
           system_prompt?: string;
+          effort?: string;
+          tools?: string[];
         };
         if (!parsed?.system_prompt) continue;
         const model = parsed.model;
@@ -107,6 +113,10 @@ export async function runClaudeSetup(options: ClaudeSetupOptions): Promise<Setup
           systemPrompt: parsed.system_prompt,
           ...(model === 'fable' || model === 'opus' || model === 'sonnet' || model === 'haiku'
             ? { model }
+            : {}),
+          ...(typeof parsed.effort === 'string' && parsed.effort ? { effort: parsed.effort } : {}),
+          ...(Array.isArray(parsed.tools) && parsed.tools.length > 0
+            ? { tools: parsed.tools.map((t) => String(t)) }
             : {}),
         });
       } catch {
@@ -131,6 +141,7 @@ export function registerClaudeCommand(program: Command): void {
     .command('setup')
     .description('Wire this project for Claude Code sessions: register the AgentForge MCP server in .mcp.json and re-emit missing .claude/agents mirrors from .agentforge/agents YAMLs')
     .option('--project-root <path>', 'Project root', process.cwd())
+    .option('--refresh', 'Re-emit ALL .claude/agents mirrors (overwrite), not just missing ones', false)
     .action(async (opts: ClaudeSetupOptions) => {
       try {
         const result = await runClaudeSetup(opts);
@@ -145,7 +156,7 @@ export function registerClaudeCommand(program: Command): void {
         }
         console.log(
           result.agentsEmitted.length > 0
-            ? `[claude setup] Emitted ${result.agentsEmitted.length} missing .claude/agents mirror(s)`
+            ? `[claude setup] Emitted ${result.agentsEmitted.length} ${opts.refresh ? 'refreshed' : 'missing'} .claude/agents mirror(s)`
             : '[claude setup] .claude/agents mirrors already present',
         );
         console.log('[claude setup] Done. Open a Claude Code session in this project to use the agentforge MCP tools.');

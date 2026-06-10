@@ -16,6 +16,7 @@ import {
 } from '../epic-review.js';
 import { runGatePhase, GateRejectedError } from '../gate-phase.js';
 import { readMemoryEntries, type GateVerdictMetadata } from '../../../memory/types.js';
+import { loadKnowledgeEntities } from '../../../knowledge/persistence.js';
 
 let tmpRoot: string;
 let cycleId: string;
@@ -150,6 +151,23 @@ describe('runEpicReview — APPROVE via schemaValidation.ok', () => {
     expect(calls[0]!.opts.capabilityTier).toBe('fable');
     expect(calls[0]!.opts.codexSandbox).toBe('read-only');
   });
+
+  it('prefers the SDK transport for structured output (cycle 5242ca92)', async () => {
+    // Two production reviews came back unparseable on the CLI transport
+    // (schemaValidationOk:false — the CLI can only append the schema text to
+    // the system prompt). The SDK transport enforces+validates+retries
+    // structured output, so it must lead the failover chain; the CLI remains
+    // the fallback when no ANTHROPIC_API_KEY is configured.
+    writePlan([{ id: 'i1', title: 'item one' }]);
+    writeExecute();
+    const { ctx, calls } = makeCtx(() => ({
+      output: '{"verdict":"APPROVE","rationale":"ok","faultedItems":[]}',
+      costUsd: 0.1,
+      schemaValidation: { ok: true },
+    }));
+    await runEpicReview(ctx);
+    expect(calls[0]!.opts.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+  });
 });
 
 describe('runEpicReview — REQUEST_CHANGES with valid itemIds', () => {
@@ -245,6 +263,10 @@ describe('runEpicReview — unparseable output → triage re-ask → still unpar
     expect(calls).toHaveLength(2);
     // The triage re-ask uses the sonnet tier.
     expect(calls[1]!.opts.capabilityTier).toBe('sonnet');
+    // Cycle 5242ca92 — BOTH calls lead with the SDK transport so structured
+    // output is enforced/validated/retried whenever an API key is configured.
+    expect(calls[0]!.opts.providerPreference).toEqual(['claude-code-compat', 'anthropic-sdk']);
+    expect(calls[1]!.opts.providerPreference).toEqual(['anthropic-sdk', 'claude-code-compat']);
 
     const epicReview = JSON.parse(readFileSync(join(phasesDir(), 'epic-review.json'), 'utf8'));
     expect(epicReview.verdict).toBe('TRIAGE');
@@ -282,6 +304,79 @@ describe('runEpicReview — salvage path (fenced block, no triage)', () => {
     expect(epicReview.verdict).toBe('APPROVE');
     expect(epicReview.rationale).toContain('salvaged from fence');
     expect(epicReview.triageUsed).toBe(false);
+  });
+});
+
+describe('runEpicReview — knowledge note (v25: the epic path feeds the KB)', () => {
+  it('APPROVE persists the rationale as a note with source epic-review and tags [cycleId, verdict]', async () => {
+    writePlan([{ id: 'i1', title: 'item one' }]);
+    writeExecute();
+
+    const { ctx } = makeCtx(() => ({
+      output: JSON.stringify({
+        verdict: 'APPROVE',
+        rationale: 'All children satisfy the operator objective end to end.',
+        faultedItems: [],
+      }),
+      costUsd: 0.5,
+      schemaValidation: { ok: true },
+    }));
+
+    await runEpicReview(ctx);
+
+    const notes = loadKnowledgeEntities(tmpRoot).filter(
+      (e) => e.properties.source === 'epic-review',
+    );
+    expect(notes).toHaveLength(1);
+    const note = notes[0]!;
+    expect(note.properties.kind).toBe('note');
+    expect(note.description).toContain('operator objective');
+    expect(note.properties.tags).toEqual([cycleId, 'APPROVE']);
+    expect(note.properties.cycleId).toBe(cycleId);
+  });
+
+  it('REQUEST_CHANGES persists the note BEFORE the GateRejectedError throw', async () => {
+    writePlan([{ id: 'i1', title: 'item one', files: ['src/a.ts'] }]);
+    writeExecute();
+
+    const { ctx } = makeCtx(() => ({
+      output: JSON.stringify({
+        verdict: 'REQUEST_CHANGES',
+        rationale: 'Item one is missing the required handler implementation.',
+        faultedItems: [{ itemId: 'i1', reason: 'missing handler', files: ['src/a.ts'] }],
+      }),
+      costUsd: 0.7,
+      schemaValidation: { ok: true },
+    }));
+
+    await expect(runEpicReview(ctx)).rejects.toBeInstanceOf(GateRejectedError);
+
+    const notes = loadKnowledgeEntities(tmpRoot).filter(
+      (e) => e.properties.source === 'epic-review',
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.properties.tags).toEqual([cycleId, 'REQUEST_CHANGES']);
+    expect(notes[0]!.description).toContain('missing the required handler');
+  });
+
+  it('TRIAGE rationale is persisted with the TRIAGE verdict tag', async () => {
+    writePlan([{ id: 'i1', title: 'item one' }]);
+    writeExecute();
+
+    const { ctx } = makeCtx(() => ({
+      output: 'prose only — nothing parseable in this reviewer output at all',
+      costUsd: 0.2,
+      schemaValidation: { ok: false },
+    }));
+
+    const result = await runEpicReview(ctx);
+    expect(result.status).toBe('completed');
+
+    const notes = loadKnowledgeEntities(tmpRoot).filter(
+      (e) => e.properties.source === 'epic-review',
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.properties.tags).toEqual([cycleId, 'TRIAGE']);
   });
 });
 

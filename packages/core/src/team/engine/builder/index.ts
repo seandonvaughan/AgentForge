@@ -52,7 +52,7 @@ import { writeTeam } from "./team-writer.js";
 import { loadAllDomains, getDefaultDomainsDir } from "../domains/index.js";
 import { activateDomains } from "../domains/domain-activator.js";
 import type { DomainId } from "../types/domain.js";
-import type { AgentRuntime } from "../../../agent-runtime/agent-runtime.js";
+import { AgentRuntime } from "../../../agent-runtime/agent-runtime.js";
 import { forgeTeamAgentDriven } from "./agent-driven-forge.js";
 import { buildSourceCorpus } from "./source-corpus.js";
 import type { SourceCorpusFile } from "./source-corpus.js";
@@ -115,10 +115,52 @@ function categorizeAgent(
 }
 
 /**
+ * Build the rich, placeholder-driven system prompt for a custom agent that
+ * has no base template. The placeholders ({project_name}, {project_purpose},
+ * {key_subsystems}, {detected_stack}, {detected_conventions},
+ * {baked_learnings}) are filled by `customizeTemplate` so the forged prompt
+ * carries real project context instead of a one-liner.
+ */
+function buildCustomAgentPrompt(customName: string, reason: string): string {
+  return [
+    `You are the ${customName} for {project_name}.`,
+    "",
+    "## Identity & Mission",
+    "{project_purpose}",
+    "",
+    `Why this seat exists on the team: ${reason}`,
+    "",
+    "## Owned Subsystems",
+    "{key_subsystems}",
+    "",
+    "Stay inside the subsystems above. If a change must cross into another",
+    "agent's territory, hand it off with a clear note instead of editing.",
+    "",
+    "## Conventions",
+    "- Stack: {detected_stack}",
+    "- Conventions: {detected_conventions}",
+    "- Match the existing code style precisely — indentation, naming, patterns.",
+    "",
+    "## Key APIs/Patterns",
+    "- Read the primary files of your owned subsystems before every task.",
+    "- Mirror the dominant patterns you find there; never invent parallel ones.",
+    "",
+    "## Pitfalls (lessons from prior cycles)",
+    "{baked_learnings}",
+    "",
+    "## Collaboration",
+    "- You report to the architect; escalate design changes instead of deciding alone.",
+    "- All changes must pass the project's test suite before you report completion.",
+  ].join("\n");
+}
+
+/**
  * Build a custom agent template by cloning a base template and adjusting
  * the name, description, and model tier.
+ *
+ * Exported so tests can assert the rich fallback prompt structure.
  */
-function buildCustomAgentTemplate(
+export function buildCustomAgentTemplate(
   baseName: string,
   customName: string,
   reason: string,
@@ -132,7 +174,7 @@ function buildCustomAgentTemplate(
       model: modelTier,
       version: "1.0",
       description: reason,
-      system_prompt: `You are the ${customName} agent. ${reason}`,
+      system_prompt: buildCustomAgentPrompt(customName, reason),
       skills: [],
       triggers: { file_patterns: [], keywords: [] },
       collaboration: {
@@ -277,17 +319,49 @@ function teamPlanToManifest(plan: TeamPlan, projectRoot: string): TeamManifest {
 // ---------------------------------------------------------------------------
 
 /**
+ * Construct a default {@link AgentRuntime} for the agent-driven forge when
+ * the caller did not inject one (e.g. `AGENTFORGE_FORGE_STRATEGY=agent-driven`
+ * via `agentforge team forge`). Uses the same AgentRuntime/ExecutionService
+ * construction pattern as the autonomous path (runtime-adapter.ts) — the
+ * ExecutionService resolves the actual transport from AGENTFORGE_RUNTIME.
+ */
+function buildDefaultForgeRuntime(projectRoot: string): AgentRuntime {
+  try {
+    return new AgentRuntime({
+      agentId: "forge-synthesis",
+      name: "forge-synthesis",
+      model: "opus",
+      systemPrompt:
+        "You are an AgentForge forge-pipeline agent. Follow the instructions " +
+        "supplied in each task exactly and emit only the requested fenced " +
+        "JSON block — no prose before or after it.",
+      workspaceId: "forge-default",
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Agent-driven forge was selected but no runtime was provided and a ` +
+        `default runtime could not be constructed for ${projectRoot}: ${detail}. ` +
+        `Pass opts.runtime, configure AGENTFORGE_RUNTIME, or fall back with ` +
+        `AGENTFORGE_FORGE_STRATEGY=legacy.`,
+    );
+  }
+}
+
+/**
  * Run the agent-driven forge pipeline and return a {@link TeamManifest}.
  *
- * Builds a source corpus automatically when one is not provided.
- * The synthesis phase writes all YAML/MD files to disk; this function
- * only reshapes the plan into the manifest type.
+ * Builds a source corpus automatically when one is not provided, and a
+ * default runtime when the caller did not inject one — so the env-var
+ * strategy path works from `agentforge team forge` without programmatic
+ * wiring. The synthesis phase writes all YAML/MD files to disk; this
+ * function only reshapes the plan into the manifest type.
  */
 async function runAgentDrivenPath(
   projectRoot: string,
   opts: ForgeTeamOptions,
 ): Promise<TeamManifest> {
-  const runtime = opts.runtime!;
+  const runtime = opts.runtime ?? buildDefaultForgeRuntime(projectRoot);
 
   // Build source corpus if caller didn't supply one
   const corpusFiles = opts.sourceCorpus ?? (await buildSourceCorpus({ projectRoot })).files;
@@ -373,12 +447,12 @@ export async function forgeTeam(
       }
     }
 
-    composition = composeTeamFromDomains(scan, activeDomainIds, domainPacks);
+    composition = composeTeamFromDomains(scan, activeDomainIds, domainPacks, templates);
   } else {
     // Fallback pipeline: flat template loading + original composition
     const templatesDir = getDefaultTemplatesDir();
     templates = await loadAllTemplates(templatesDir);
-    composition = composeTeam(scan);
+    composition = composeTeam(scan, templates);
   }
 
   // 4. Customize each template

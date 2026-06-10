@@ -91,6 +91,63 @@ describe('runClaudeSetup', () => {
     }
   });
 
+  it('refresh: true re-emits ALL mirrors, overwriting existing ones', async () => {
+    writeAgentYaml('coder', 'sonnet');
+    mkdirSync(join(root, '.claude', 'agents'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'agents', 'coder.md'), 'stale mirror');
+
+    const fakeServer = join(root, 'fake-mcp.js');
+    writeFileSync(fakeServer, '// stub');
+    const result = await runClaudeSetup({ projectRoot: root, mcpServerPath: fakeServer, refresh: true });
+
+    // agentsEmitted carries absolute paths of every mirror written
+    expect(result.agentsEmitted.some((p) => p.endsWith('coder.md'))).toBe(true);
+    const md = readFileSync(join(root, '.claude', 'agents', 'coder.md'), 'utf8');
+    expect(md).not.toBe('stale mirror');
+    expect(md).toContain('You are coder.');
+  });
+
+  it('passes effort and tools from the YAML into the .md frontmatter', async () => {
+    const dir = join(root, '.agentforge', 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'epic-planner.yaml'),
+      [
+        'name: epic-planner',
+        'model: fable',
+        "version: '1.0'",
+        'description: epic decomposition authority',
+        'effort: xhigh',
+        'tools:',
+        '  - Read',
+        '  - Grep',
+        'system_prompt: |',
+        '  You decompose epics into PR-sized children.',
+        '',
+      ].join('\n'),
+    );
+
+    const fakeServer = join(root, 'fake-mcp.js');
+    writeFileSync(fakeServer, '// stub');
+    await runClaudeSetup({ projectRoot: root, mcpServerPath: fakeServer });
+
+    const md = readFileSync(join(root, '.claude', 'agents', 'epic-planner.md'), 'utf8');
+    expect(md).toContain('effort: xhigh');
+    expect(md).toContain('Read');
+    expect(md).toContain('Grep');
+    expect(md).toContain('claude-fable-5');
+  });
+
+  it('omits effort from the frontmatter when the YAML has none', async () => {
+    writeAgentYaml('coder', 'sonnet');
+    const fakeServer = join(root, 'fake-mcp.js');
+    writeFileSync(fakeServer, '// stub');
+    await runClaudeSetup({ projectRoot: root, mcpServerPath: fakeServer });
+
+    const md = readFileSync(join(root, '.claude', 'agents', 'coder.md'), 'utf8');
+    expect(md).not.toContain('effort:');
+  });
+
   it('rejects a corrupt .mcp.json instead of clobbering it', async () => {
     const fakeServer = join(root, 'fake-mcp.js');
     writeFileSync(fakeServer, '// stub');

@@ -512,6 +512,107 @@ export function buildGateRetryContext(
 }
 
 /**
+ * Cycle 5242ca92 — read the epic-integration signal from phases/execute.json
+ * on disk. A resumed run whose execute phase was degraded (or skipped) carries
+ * no `epicIntegration` on the in-memory PhaseResult even though the original
+ * run persisted it; this disk fallback lets the release stage still find the
+ * integration branch. Mirrors the tryReadJson pattern used by the epic review
+ * (epic-review.ts loadEpicIntegration) without importing from it. Defensive:
+ * returns null on a missing/malformed file or signal.
+ */
+export function readEpicIntegrationFromDisk(
+  projectRoot: string,
+  cycleId: string,
+): EpicIntegrationResult | null {
+  const executePath = join(
+    projectRoot,
+    '.agentforge',
+    'cycles',
+    cycleId,
+    'phases',
+    'execute.json',
+  );
+  let parsed: { epicIntegration?: unknown };
+  try {
+    parsed = JSON.parse(readFileSync(executePath, 'utf8')) as { epicIntegration?: unknown };
+  } catch {
+    return null;
+  }
+  const integ = parsed?.epicIntegration as
+    | {
+        branch?: unknown;
+        epicId?: unknown;
+        mergedBranches?: unknown;
+        hadConflicts?: unknown;
+        requiresFullGates?: unknown;
+      }
+    | undefined;
+  if (!integ || typeof integ.branch !== 'string' || typeof integ.epicId !== 'string') {
+    return null;
+  }
+  return {
+    branch: integ.branch,
+    epicId: integ.epicId,
+    mergedBranches: Array.isArray(integ.mergedBranches)
+      ? integ.mergedBranches.filter((b: unknown): b is string => typeof b === 'string')
+      : [],
+    hadConflicts: integ.hadConflicts === true,
+    ...(integ.requiresFullGates === true ? { requiresFullGates: true } : {}),
+  };
+}
+
+/**
+ * Cycle 5242ca92 / PR #307 — an OBJECTIVE cycle must release from its epic
+ * integration branch. When the integration signal is still null after the
+ * disk fallback, falling through to the legacy main-tree createBranch/stage/
+ * commit path commits whatever happens to be in the operator's working tree
+ * (an untracked .mcp.json shipped as PR #307). Refuse loudly instead.
+ * No-op for signal cycles (objective undefined) or when the signal is present.
+ */
+export function assertObjectiveReleaseIntegration(
+  objective: string | undefined,
+  epicIntegration: EpicIntegrationResult | null,
+): void {
+  if (objective === undefined || epicIntegration !== null) return;
+  throw new Error(
+    'objective cycle has no integration branch — refusing the legacy main-tree release; inspect phases/execute.json',
+  );
+}
+
+/**
+ * Cycle 5242ca92 — on `--resume`, the cycle directory already holds the
+ * authoritative plan.json (e.g. the epic decomposer's wave-layered children,
+ * with the failed attempt's statuses). STAGE 2 used to re-run SprintGenerator
+ * unconditionally, which on the objective path regenerates plan.json from an
+ * EMPTY approved-items list (the epic decomposer only refills it when the plan
+ * phase runs — exactly the phase a resume skips). The resumed execute phase
+ * then saw totalItems:0 and completed vacuously. This helper loads the
+ * existing plan instead; returns null (caller regenerates) when the file is
+ * missing, malformed, or carries no items.
+ */
+export function tryLoadExistingPlanForResume(
+  projectRoot: string,
+  cycleId: string,
+): SprintPlan | null {
+  const planPath = join(projectRoot, '.agentforge', 'cycles', cycleId, 'plan.json');
+  try {
+    const parsed = JSON.parse(readFileSync(planPath, 'utf8')) as Partial<SprintPlan>;
+    if (
+      parsed &&
+      typeof parsed.version === 'string' &&
+      typeof parsed.sprintId === 'string' &&
+      Array.isArray(parsed.items) &&
+      parsed.items.length > 0
+    ) {
+      return parsed as SprintPlan;
+    }
+  } catch {
+    // missing or malformed — caller falls back to regeneration
+  }
+  return null;
+}
+
+/**
  * Extract a useful error message from a failed execFileAsync call.
  *
  * Critical fix: TypeScript (and most build tools) write compilation errors to
@@ -1559,7 +1660,22 @@ export class CycleRunner {
     // cycles/{cycleId}/plan.json — single source of truth (Track D migration).
     // ─────────────────────────────────────────────────────────────────
     const generator = new SprintGenerator(this.options.cwd, this.options.config);
-    const plan: SprintPlan = await generator.generate(approved.approvedItems, this.cycleId);
+    // Cycle 5242ca92 — on --resume, reuse the existing plan.json instead of
+    // regenerating it. Regeneration overwrote the epic decomposer's children
+    // with an empty objective-mode shell (approvedItems is [] on the objective
+    // path and the plan phase that refills items is skipped by the resume),
+    // so the resumed execute phase dispatched 0 items.
+    const existingPlan = this.options.resumeCheckpoint
+      ? tryLoadExistingPlanForResume(this.options.cwd, this.cycleId)
+      : null;
+    if (existingPlan) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[autonomous:cycle] resume: reusing existing plan.json (version=${existingPlan.version}, items=${existingPlan.items.length}) — skipping sprint regeneration`,
+      );
+    }
+    const plan: SprintPlan =
+      existingPlan ?? (await generator.generate(approved.approvedItems, this.cycleId));
     this.sprintVersion = plan.version;
     // Log sprint assignment in events.jsonl so the dashboard can resolve the
     // sprint version without timestamp matching.
@@ -1640,6 +1756,20 @@ export class CycleRunner {
         // the operator's main working tree.
         this.epicIntegration =
           runSummary.completedPhases.find((p) => p.phase === 'execute')?.epicIntegration ?? null;
+        // Cycle 5242ca92 — a resumed run whose execute phase was skipped or
+        // degraded carries no epicIntegration on the in-memory PhaseResult even
+        // though phases/execute.json on disk still has the original signal. On
+        // the objective path, fall back to the disk artifact so STAGE 5
+        // releases from the integration branch, not the operator's main tree.
+        if (this.epicIntegration === null && this.options.objective !== undefined) {
+          this.epicIntegration = readEpicIntegrationFromDisk(this.options.cwd, this.cycleId);
+          if (this.epicIntegration) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[autonomous:cycle] epicIntegration recovered from phases/execute.json on disk (branch=${this.epicIntegration.branch})`,
+            );
+          }
+        }
         // Gate approved — break out of retry loop
         this.gateVerdict = 'APPROVE';
         // Reconcile sprint file: mark all executed items as completed
@@ -1820,6 +1950,11 @@ export class CycleRunner {
     // ─────────────────────────────────────────────────────────────────
     const filesToCommit = await this.collectChangedFiles(runSummary);
     this.filesChanged = filesToCommit;
+
+    // Cycle 5242ca92 / PR #307 — refuse the legacy main-tree release on an
+    // objective cycle whose integration signal is STILL null after the disk
+    // fallback above. The legacy path commits the operator's working tree.
+    assertObjectiveReleaseIntegration(this.options.objective, this.epicIntegration);
 
     if (this.epicIntegration) {
       // ── epic single-PR path (P0.4 KEYSTONE) ─────────────────────────

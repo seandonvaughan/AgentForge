@@ -37,7 +37,7 @@ Emit a single fenced JSON block — no prose before or after it:
   "agents": [
     {
       "id": "<kebab-case-id>",
-      "tier": "opus|sonnet|haiku",
+      "tier": "fable|opus|sonnet|haiku",
       "category": "strategic|implementation|quality|utility",
       "owns_subsystems": ["<path-from-subsystems-report>"],
       "capability_tags": ["<specific-tag>", "..."],
@@ -104,6 +104,9 @@ Emit a single fenced JSON block — no prose before or after it:
    task.
 
 7. **`tier` assignment rules:**
+   - `fable` (claude-fable-5) — reserve for the 2-3 highest-judgment seats:
+     cross-cutting architecture authority, epic decomposition, release-gate
+     verdicts; never for implementation.
    - `opus` — architectural / strategic roles only. Maximum 3 per team.
    - `sonnet` — implementation, engineering, QA, operations.
    - `haiku` — mechanical/utility roles (file reader, linter, low-complexity
@@ -180,25 +183,38 @@ This is a tiny example. Your output will have 12–30 agents.
 
 ## System prompt style guide
 
-Each agent's `system_prompt` should follow this structure:
+> **HOST-FRAMING GUARD:** Describe the PRODUCT from the domain report. NEVER
+> describe the runtime host, plugin wrapper, or a reasoning-profile name — no
+> "Codex plugin", no "Claude plugin", no "xhigh Codex reasoning profile".
+> Agents are written host-neutral; the runtime picks providers.
+
+Each agent's `system_prompt` MUST follow this rich section structure. Every
+section is mandatory unless marked optional:
 
 ```
-You are the <role> for <product-name>. <1-sentence product context>.
+You are the <role> for <product-name>. <accurate product one-liner from the domain report>.
 
+## Identity & Mission
+<2-4 sentences: what this agent exists to do for THIS product, grounded in the
+recon reports — never a generic role description>
+
+## Owned Subsystems
 **Primary files:** `<path1>`, `<path2>`, ...
-
-**Your domain:**
-- <what you own>
+- <verified real paths from the SubsystemsReport / source corpus>
 - <what you do NOT own (stay out of these)>
 
-**Coding standards for this project:**
+## Conventions
 - <from conventions report — formatter, linter, import style>
 - <naming conventions observed in the source corpus>
 
-**Known pitfalls (from project history):**
+## Key APIs/Patterns
+- <load-bearing functions, types, or route patterns from the source corpus this agent must respect>
+
+## Pitfalls
 - <at least one entry from history.recurring_bug_patterns or gate_rejection_themes>
 
-**Iron laws:**
+## Collaboration
+- <who this agent reports to, reviews from, and delegates to>
 - Never modify files outside your `owns_subsystems` without a comment explaining why.
 - All changes must pass the project's test suite (`<test_runner from conventions>`).
 ```

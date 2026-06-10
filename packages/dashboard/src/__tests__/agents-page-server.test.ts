@@ -173,6 +173,12 @@ describe('_loadAgents — field parsing', () => {
 // ── Model normalisation ───────────────────────────────────────────────────────
 
 describe('_loadAgents — model normalisation', () => {
+  it('preserves "fable" model', () => {
+    const dir = makeAgentsDir();
+    writeFileSync(join(dir, 'a.yaml'), 'name: A\nmodel: fable\n');
+    expect(_loadAgents(tmpRoot)[0]!.model).toBe('fable');
+  });
+
   it('preserves "opus" model', () => {
     const dir = makeAgentsDir();
     writeFileSync(join(dir, 'a.yaml'), 'name: A\nmodel: opus\n');
@@ -203,7 +209,7 @@ describe('_loadAgents — model normalisation', () => {
     expect(_loadAgents(tmpRoot)[0]!.model).toBe('sonnet');
   });
 
-  it('adds a resolved Codex model profile while preserving the capability tier', () => {
+  it('adds a resolved Claude-primary model profile while preserving the capability tier', () => {
     const dir = makeAgentsDir();
     writeFileSync(join(dir, 'architect.yaml'), 'name: Architect\nmodel: opus\n');
 
@@ -215,14 +221,53 @@ describe('_loadAgents — model normalisation', () => {
     expect(agent.model).toBe('opus');
     expect(agent.capabilityTier).toBe('opus');
     expect(agent.modelProfile).toEqual({
-      provider: 'codex-cli',
+      provider: 'claude',
       tier: 'opus',
-      modelId: 'gpt-5.5',
+      modelId: 'claude-opus-4-8',
+      effort: 'high',
+    });
+  });
+
+  it('resolves the fable tier to claude-fable-5 at xhigh effort', () => {
+    const dir = makeAgentsDir();
+    writeFileSync(join(dir, 'strategist.yaml'), 'name: Strategist\nmodel: fable\n');
+
+    const agent = _loadAgents(tmpRoot)[0] as AgentListItem & {
+      capabilityTier?: string;
+      modelProfile?: { provider: string; tier: string; modelId: string; effort: string };
+    };
+
+    expect(agent.model).toBe('fable');
+    expect(agent.capabilityTier).toBe('fable');
+    expect(agent.modelProfile).toEqual({
+      provider: 'claude',
+      tier: 'fable',
+      modelId: 'claude-fable-5',
       effort: 'xhigh',
     });
   });
 
-  it('uses Codex model overrides from models.yaml while agent effort takes precedence', () => {
+  it('resolves tier defaults: sonnet→claude-sonnet-4-6/high, haiku→claude-haiku-4-5/medium', () => {
+    const dir = makeAgentsDir();
+    writeFileSync(join(dir, 'coder.yaml'), 'name: Coder\nmodel: sonnet\n');
+    writeFileSync(join(dir, 'utility.yaml'), 'name: Utility\nmodel: haiku\n');
+
+    const [coder, utility] = _loadAgents(tmpRoot);
+    expect(coder!.modelProfile).toEqual({
+      provider: 'claude',
+      tier: 'sonnet',
+      modelId: 'claude-sonnet-4-6',
+      effort: 'high',
+    });
+    expect(utility!.modelProfile).toEqual({
+      provider: 'claude',
+      tier: 'haiku',
+      modelId: 'claude-haiku-4-5',
+      effort: 'medium',
+    });
+  });
+
+  it('uses codex overrides from models.yaml (provider inferred) while agent effort takes precedence', () => {
     const dir = makeAgentsDir();
     mkdirSync(join(tmpRoot, '.agentforge', 'config'), { recursive: true });
     writeFileSync(join(tmpRoot, '.agentforge', 'config', 'models.yaml'), [
@@ -236,12 +281,41 @@ describe('_loadAgents — model normalisation', () => {
     writeFileSync(join(dir, 'coder.yaml'), 'name: Coder\nmodel: sonnet\neffort: high\n');
 
     const agent = _loadAgents(tmpRoot)[0] as AgentListItem & {
-      modelProfile?: { modelId: string; effort: string };
+      modelProfile?: { provider: string; modelId: string; effort: string };
     };
 
     expect(agent.modelProfile).toMatchObject({
+      provider: 'codex-cli',
       modelId: 'gpt-next-codex',
       effort: 'high',
+    });
+  });
+
+  it('uses claude overrides from models.yaml, winning over codex-cli for the same tier', () => {
+    const dir = makeAgentsDir();
+    mkdirSync(join(tmpRoot, '.agentforge', 'config'), { recursive: true });
+    writeFileSync(join(tmpRoot, '.agentforge', 'config', 'models.yaml'), [
+      'providers:',
+      '  claude:',
+      '    tiers:',
+      '      opus:',
+      '        model: claude-opus-next',
+      '        effort: xhigh',
+      '  codex-cli:',
+      '    tiers:',
+      '      opus:',
+      '        model: gpt-9',
+    ].join('\n'));
+    writeFileSync(join(dir, 'architect.yaml'), 'name: Architect\nmodel: opus\n');
+
+    const agent = _loadAgents(tmpRoot)[0] as AgentListItem & {
+      modelProfile?: { provider: string; modelId: string; effort: string };
+    };
+
+    expect(agent.modelProfile).toMatchObject({
+      provider: 'claude',
+      modelId: 'claude-opus-next',
+      effort: 'xhigh',
     });
   });
 });
@@ -337,9 +411,9 @@ const AGENT_BASE: AgentListItem = {
   model: 'sonnet',
   capabilityTier: 'sonnet',
   modelProfile: {
-    provider: 'codex-cli',
+    provider: 'claude',
     tier: 'sonnet',
-    modelId: 'gpt-5.3-codex',
+    modelId: 'claude-sonnet-4-6',
     effort: 'high',
   },
   description: null,
@@ -386,9 +460,11 @@ describe('matchesAgentFilter — team filter', () => {
 
 describe('matchesAgentFilter — model filter', () => {
   it('filterModel="" matches any model', () => {
-    const opus   = { ...AGENT_BASE, model: 'opus' as const };
+    const fable  = { ...AGENT_BASE, model: 'fable' as const, capabilityTier: 'fable' as const };
+    const opus   = { ...AGENT_BASE, model: 'opus' as const, capabilityTier: 'opus' as const };
     const sonnet = { ...AGENT_BASE, model: 'sonnet' as const };
-    const haiku  = { ...AGENT_BASE, model: 'haiku' as const };
+    const haiku  = { ...AGENT_BASE, model: 'haiku' as const, capabilityTier: 'haiku' as const };
+    expect(matchesAgentFilter(fable,  '', '', '')).toBe(true);
     expect(matchesAgentFilter(opus,   '', '', '')).toBe(true);
     expect(matchesAgentFilter(sonnet, '', '', '')).toBe(true);
     expect(matchesAgentFilter(haiku,  '', '', '')).toBe(true);
@@ -400,15 +476,32 @@ describe('matchesAgentFilter — model filter', () => {
       model: 'opus' as const,
       capabilityTier: 'opus' as const,
       modelProfile: {
-        provider: 'codex-cli' as const,
+        provider: 'claude' as const,
         tier: 'opus' as const,
-        modelId: 'gpt-5.5',
-        effort: 'xhigh',
+        modelId: 'claude-opus-4-8',
+        effort: 'high',
       },
     };
     const sonnet = { ...AGENT_BASE, model: 'sonnet' as const };
     expect(matchesAgentFilter(opus,   '', 'opus', '')).toBe(true);
     expect(matchesAgentFilter(sonnet, '', 'opus', '')).toBe(false);
+  });
+
+  it('filterModel="fable" only matches fable agents', () => {
+    const fable = {
+      ...AGENT_BASE,
+      model: 'fable' as const,
+      capabilityTier: 'fable' as const,
+      modelProfile: {
+        provider: 'claude' as const,
+        tier: 'fable' as const,
+        modelId: 'claude-fable-5',
+        effort: 'xhigh',
+      },
+    };
+    const opus = { ...AGENT_BASE, model: 'opus' as const, capabilityTier: 'opus' as const };
+    expect(matchesAgentFilter(fable, '', 'fable', '')).toBe(true);
+    expect(matchesAgentFilter(opus,  '', 'fable', '')).toBe(false);
   });
 });
 
@@ -444,10 +537,10 @@ describe('matchesAgentFilter — combined filters', () => {
       model: 'opus',
       capabilityTier: 'opus',
       modelProfile: {
-        provider: 'codex-cli',
+        provider: 'claude',
         tier: 'opus',
-        modelId: 'gpt-5.5',
-        effort: 'xhigh',
+        modelId: 'claude-opus-4-8',
+        effort: 'high',
       },
       description: 'Plans sprints.',
       role: 'planner',
@@ -480,7 +573,7 @@ describe('_loadAgents — real project data', () => {
     for (const agent of result) {
       expect(agent.agentId.length).toBeGreaterThan(0);
       expect(agent.name.length).toBeGreaterThan(0);
-      expect(['opus', 'sonnet', 'haiku']).toContain(agent.model);
+      expect(['fable', 'opus', 'sonnet', 'haiku']).toContain(agent.model);
     }
 
     // At least one strategic opus agent must be present (the architect/CTO
