@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "agentforge": {
+      "command": "node",
+      "args": [
+        "/Users/seandonvaughan/Projects/AgentForge/packages/mcp-server/dist/index.js"
+      ],
+      "env": {
+        "AGENTFORGE_PROJECT_ROOT": "/Users/seandonvaughan/Projects/AgentForge"
+      }
+    }
+  }
+}
