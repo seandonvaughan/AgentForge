@@ -8,24 +8,29 @@
    * Data sources:
    *   - SSR: agent detail from +page.server.ts (reads .agentforge/agents/<id>.yaml)
    *   - Client: GET /api/v5/sessions?agentId=:id (sessions tab)
-   *   - Client: GET /api/v5/memory?agentId=:id (memory tab)
-   *   - Config tab: GET /api/v5/agents/:id/raw → textarea; PUT to save
+   *   - Client: GET /api/v5/agents/:id/memory (memory tab — personal-memory
+   *     timeline; falls back to GET /api/v5/memory?agentId=:id on 404)
+   *   - Config tab: structured editor → PATCH /api/v5/agents/:id with
+   *     {name?, model, effort, description, system_prompt, skills, tools};
+   *     Advanced raw YAML → GET/PUT /api/v5/agents/:id/raw
    *
    * ENDPOINT STATUS:
-   *   ✅ GET /api/v5/agents/:id       — exists, returns agent detail
+   *   ✅ GET /api/v5/agents/:id        — exists, returns agent detail
    *   ✅ GET /api/v5/sessions          — exists, supports ?agentId filter
-   *   ✅ GET /api/v5/memory            — exists, supports ?agentId filter
-   *   ✅ PATCH /api/v5/agents/:id     — exists in agent-crud.ts for JSON updates
-   *   ✅ GET /api/v5/agents/:id/raw   — returns verbatim YAML file content
-   *   ✅ PUT /api/v5/agents/:id/raw   — writes validated YAML back to file
+   *   ✅ GET /api/v5/agents/:id/memory — personal memory timeline (v24)
+   *   ✅ GET /api/v5/memory            — legacy fallback, supports ?agentId filter
+   *   ✅ PATCH /api/v5/agents/:id      — JSON updates (v24 adds effort + tools)
+   *   ✅ GET /api/v5/agents/:id/raw    — returns verbatim YAML file content
+   *   ✅ PUT /api/v5/agents/:id/raw    — writes validated YAML back to file
    */
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
   import {
     Badge, Btn, Card, KpiTile, ModelChip, PulseDot, Ring, Sparkline, Tabs,
   } from '$lib/components/v2';
   import type { PageData } from './$types';
   import type { AgentDetail } from './+page.server';
+  import type { CapabilityTier } from '../agents-utils';
 
   let { data }: { data: PageData } = $props();
   let agent = $derived(data.agent);
@@ -66,8 +71,39 @@
   let expandedSession = $state<string | null>(null);
 
   // ── Memory data ──────────────────────────────────────────────────────────────
-  interface MemEntry {
+  // Personal-memory timeline entry. Mirrors core's AgentMemoryEntry shape
+  // (packages/core/src/memory/agent-memory.ts) served by
+  // GET /api/v5/agents/:id/memory. Legacy /api/v5/memory?agentId= rows are
+  // mapped into this shape by normalizeLegacyEntries().
+  interface PersonalMemoryEntry {
     id: string;
+    createdAt: string | null;
+    /** 'self-note' | 'item-outcome' | legacy kinds (pattern/decision/…). */
+    kind: string;
+    value: string;
+    cycleId: string | null;
+    itemId: string | null;
+    outcome: string | null;
+    costUsd: number | null;
+    tags: string[];
+  }
+
+  /** Raw wire shape from GET /api/v5/agents/:id/memory. */
+  interface RawPersonalEntry {
+    id?: string;
+    createdAt?: string;
+    kind?: string;
+    value?: string;
+    cycleId?: string;
+    itemId?: string;
+    outcome?: string;
+    costUsd?: number;
+    tags?: string[];
+  }
+
+  /** Raw wire shape from the legacy GET /api/v5/memory?agentId= endpoint. */
+  interface LegacyMemEntry {
+    id?: string;
     key?: string;
     type?: string;
     value?: unknown;
@@ -78,12 +114,131 @@
     tags?: string[];
   }
 
-  let memEntries = $state<MemEntry[]>([]);
+  let memEntries = $state<PersonalMemoryEntry[]>([]);
   let memLoading = $state(false);
   let memError = $state<string | null>(null);
   let memKindFilter = $state('');
 
-  // ── Config tab ───────────────────────────────────────────────────────────────
+  /** Newest-first sort by createdAt (ISO strings compare lexicographically). */
+  function sortNewestFirst(entries: PersonalMemoryEntry[]): PersonalMemoryEntry[] {
+    return [...entries].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  }
+
+  function normalizePersonalEntries(rows: RawPersonalEntry[]): PersonalMemoryEntry[] {
+    return sortNewestFirst(rows
+      .filter(r => typeof r.value === 'string' && r.value.length > 0)
+      .map((r, i) => ({
+        id: r.id ?? `personal-${i}`,
+        createdAt: r.createdAt ?? null,
+        kind: r.kind ?? 'self-note',
+        value: r.value ?? '',
+        cycleId: r.cycleId ?? null,
+        itemId: r.itemId ?? null,
+        outcome: r.outcome ?? null,
+        costUsd: typeof r.costUsd === 'number' ? r.costUsd : null,
+        tags: r.tags ?? [],
+      })));
+  }
+
+  function normalizeLegacyEntries(rows: LegacyMemEntry[]): PersonalMemoryEntry[] {
+    return sortNewestFirst(rows.map((r, i) => ({
+      id: r.id ?? `legacy-${i}`,
+      createdAt: r.createdAt ?? null,
+      kind: r.type ?? 'memory',
+      value: r.summary ?? (typeof r.value === 'string' ? r.value : r.key ?? ''),
+      cycleId: null,
+      itemId: null,
+      outcome: null,
+      costUsd: null,
+      tags: r.tags ?? [],
+    })).filter(e => e.value.length > 0));
+  }
+
+  // ── Config tab — structured editor ──────────────────────────────────────────
+  const TIER_OPTIONS: readonly CapabilityTier[] = ['fable', 'opus', 'sonnet', 'haiku'];
+  const EFFORT_OPTIONS: readonly string[] = ['xhigh', 'high', 'medium', 'low'];
+
+  let editModel = $state<CapabilityTier>('sonnet');
+  let editEffort = $state('high');
+  let editSystemPrompt = $state('');
+  let editDescription = $state('');
+  let editSkills = $state<string[]>([]);
+  let editTools = $state<string[]>([]);
+  let newSkill = $state('');
+  let newTool = $state('');
+  let structSaving = $state(false);
+  let structSaveError = $state<string | null>(null);
+  let structSaved = $state(false);
+
+  /** Re-seed the structured editor from the (SSR-loaded) agent detail. */
+  function syncEditorFromAgent(): void {
+    editModel = agent.capabilityTier ?? agent.model;
+    editEffort = agent.effort ?? agent.modelProfile?.effort ?? 'high';
+    editSystemPrompt = agent.systemPrompt ?? '';
+    editDescription = agent.description ?? '';
+    editSkills = [...agent.skills];
+    editTools = [...(agent.tools ?? [])];
+  }
+
+  /** Append a trimmed, deduplicated value to a chip list. */
+  function addChip(list: string[], value: string): string[] {
+    const v = value.trim();
+    if (!v || list.includes(v)) return list;
+    return [...list, v];
+  }
+
+  function addSkill(): void {
+    editSkills = addChip(editSkills, newSkill);
+    newSkill = '';
+  }
+
+  function addTool(): void {
+    editTools = addChip(editTools, newTool);
+    newTool = '';
+  }
+
+  /**
+   * Save the structured editor via PATCH /api/v5/agents/:id. The body matches
+   * the v24 agent-crud contract: effort + tools are first-class fields.
+   */
+  async function saveStructured(): Promise<void> {
+    if (structSaving) return;
+    structSaving = true;
+    structSaveError = null;
+    structSaved = false;
+    try {
+      if (!editSystemPrompt.trim()) throw new Error('System prompt cannot be empty');
+      const res = await fetch(`/api/v5/agents/${encodeURIComponent(agent.agentId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: editModel,
+          effort: editEffort,
+          description: editDescription,
+          system_prompt: editSystemPrompt,
+          skills: editSkills,
+          tools: editTools,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Server error' })) as { error?: string };
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      structSaved = true;
+      // Refresh SSR agent data and the raw-YAML view so the page reflects the save.
+      await invalidateAll();
+      syncEditorFromAgent();
+      await loadConfigYaml();
+      setTimeout(() => { structSaved = false; }, 3000);
+    } catch (e) {
+      structSaveError = e instanceof Error ? e.message : 'Save failed';
+    } finally {
+      structSaving = false;
+    }
+  }
+
+  // ── Config tab — advanced raw YAML (GET/PUT :id/raw) ────────────────────────
+  let showRawYaml = $state(false);
   let configYaml = $state('');
   let configEditing = $state(false);
   let configSaving = $state(false);
@@ -117,10 +272,20 @@
     memLoading = true;
     memError = null;
     try {
-      const res = await fetch(`/api/v5/memory?agentId=${encodeURIComponent(agent.agentId)}&limit=100`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json() as { data?: MemEntry[] };
-      memEntries = json.data ?? [];
+      // Personal-memory endpoint first (v24); a 404 means the server predates
+      // the route, so fall back to the shared memory store filtered by agent.
+      const res = await fetch(`/api/v5/agents/${encodeURIComponent(agent.agentId)}/memory`);
+      if (res.ok) {
+        const json = await res.json() as { data?: RawPersonalEntry[] };
+        memEntries = normalizePersonalEntries(json.data ?? []);
+      } else if (res.status === 404) {
+        const legacy = await fetch(`/api/v5/memory?agentId=${encodeURIComponent(agent.agentId)}&limit=100`);
+        if (!legacy.ok) throw new Error(`HTTP ${legacy.status}`);
+        const json = await legacy.json() as { data?: LegacyMemEntry[] };
+        memEntries = normalizeLegacyEntries(json.data ?? []);
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
     } catch (e) {
       memError = e instanceof Error ? e.message : 'Failed to load memory';
     } finally {
@@ -181,6 +346,9 @@
       configYaml = json.data?.yaml ?? configYaml;
       configSaved = true;
       configEditing = false;
+      // Raw edits may change model/effort/skills — re-seed the structured editor.
+      await invalidateAll();
+      syncEditorFromAgent();
       setTimeout(() => { configSaved = false; }, 3000);
     } catch (e) {
       configSaveError = e instanceof Error ? e.message : 'Save failed';
@@ -190,6 +358,7 @@
   }
 
   onMount(() => {
+    syncEditorFromAgent();
     void loadSessions();
     void loadMemory();
     void loadConfigYaml();
@@ -239,11 +408,11 @@
 
   let memFiltered = $derived(
     memKindFilter
-      ? memEntries.filter(m => (m.type ?? '') === memKindFilter)
+      ? memEntries.filter(m => m.kind === memKindFilter)
       : memEntries
   );
 
-  let memKinds = $derived([...new Set(memEntries.map(m => m.type ?? '').filter(Boolean))].sort());
+  let memKinds = $derived([...new Set(memEntries.map(m => m.kind).filter(Boolean))].sort());
 
   function sessionRowKey(session: SessionRow, index: number): string {
     return [
@@ -254,11 +423,11 @@
     ].filter(Boolean).join('::');
   }
 
-  function memoryEntryKey(entry: MemEntry, index: number): string {
+  function memoryEntryKey(entry: PersonalMemoryEntry, index: number): string {
     return [
       entry.id,
-      entry.type,
-      entry.source ?? entry.agentId,
+      entry.kind,
+      entry.cycleId,
       entry.createdAt,
       index,
     ].filter(Boolean).join('::');
@@ -297,23 +466,33 @@
     return 'muted';
   }
 
+  /** Display label for a memory-entry kind badge. */
+  function kindLabel(kind: string): string {
+    if (kind === 'self-note') return 'LEARNED';
+    if (kind === 'item-outcome') return 'outcome';
+    return kind;
+  }
+
   function kindVariant(kind: string | undefined): 'purple' | 'danger' | 'info' | 'warning' | 'muted' {
-    if (kind === 'pattern') return 'purple';
+    if (kind === 'self-note' || kind === 'pattern') return 'purple';
+    if (kind === 'item-outcome' || kind === 'decision') return 'info';
     if (kind === 'failure') return 'danger';
-    if (kind === 'decision') return 'info';
     if (kind === 'metric') return 'warning';
     return 'muted';
   }
 
-  function modelTier(model: string | undefined): 'opus' | 'sonnet' | 'haiku' {
+  function modelTier(model: string | undefined): CapabilityTier {
     const m = (model ?? '').toLowerCase();
+    if (m.includes('fable')) return 'fable';
     if (m.includes('opus')) return 'opus';
     if (m.includes('haiku')) return 'haiku';
     return 'sonnet';
   }
 
   function profileModel(): string {
-    return agent.modelProfile?.modelId ?? 'gpt-5.3-codex';
+    // Fall back to the bare tier name — ModelChip resolves it to the primary
+    // (Claude) family model id via codexProfileFor.
+    return agent.modelProfile?.modelId ?? agent.capabilityTier ?? agent.model;
   }
 
   function profileEffort(): string {
@@ -371,7 +550,7 @@
 
   <div class="af-agent-actions">
     <Btn size="sm" href={`/runner?agentId=${encodeURIComponent(agent.agentId)}`}>▶ Run</Btn>
-    <Btn size="sm" onClick={() => { activeTab = 'config'; configEditing = true; }}>Edit config</Btn>
+    <Btn size="sm" onClick={() => { activeTab = 'config'; }}>Edit config</Btn>
   </div>
 </div>
 
@@ -508,7 +687,7 @@
           <div class="af-detail-grid">
             {#if agent.model}
               <div class="af-detail-row">
-                <span class="af-detail-label">Codex model</span>
+                <span class="af-detail-label">Model</span>
                 <ModelChip model={profileModel()} effort={profileEffort()} tier={agent.capabilityTier ?? agent.model} size="md" />
               </div>
               <div class="af-detail-row">
@@ -636,8 +815,8 @@
     <Card>
       <div class="af-empty-hero">
         <div class="af-empty-icon">⚘</div>
-        <div class="af-empty-title">No memory entries from this agent yet.</div>
-        <div class="af-empty-sub">Entries appear when this agent extracts patterns, decisions, or learnings during cycles.</div>
+        <div class="af-empty-title">No personal memory for this agent yet.</div>
+        <div class="af-empty-sub">Entries appear when this agent completes cycle items or emits LEARNED notes.</div>
       </div>
     </Card>
   {:else}
@@ -649,33 +828,41 @@
           <button
             class="af-pill {memKindFilter === kind ? 'active af-pill-all' : ''}"
             onclick={() => (memKindFilter = memKindFilter === kind ? '' : kind)}
-          >{kind}</button>
+          >{kindLabel(kind)}</button>
         {/each}
         <span class="af-filter-count font-mono">{memFiltered.length} of {memEntries.length}</span>
       </div>
     {/if}
 
+    <!-- Personal-memory timeline (newest first) -->
     <div class="af-mem-list">
       {#each memFiltered as m, i (memoryEntryKey(m, i))}
-        {@const kindColor = m.type === 'failure' ? 'var(--af-danger)' : m.type === 'decision' ? 'var(--af-sonnet)' : m.type === 'metric' ? 'var(--af-warning)' : 'var(--af-purple)'}
+        {@const kindColor = m.outcome === 'failed' || m.kind === 'failure' ? 'var(--af-danger)' : m.kind === 'self-note' || m.kind === 'pattern' ? 'var(--af-purple)' : m.kind === 'metric' ? 'var(--af-warning)' : 'var(--af-sonnet)'}
         <Card hover style="border-left:3px solid {kindColor}; padding:14px 16px; margin-bottom:8px;">
           <div class="af-mem-header">
-            <Badge variant={kindVariant(m.type)}>{m.type ?? 'memory'}</Badge>
-            {#if m.source}
-              <span class="font-mono af-mem-source">from {m.source}</span>
+            <Badge variant={kindVariant(m.kind)}>{kindLabel(m.kind)}</Badge>
+            {#if m.outcome}
+              <Badge variant={m.outcome === 'failed' ? 'danger' : 'success'}>{m.outcome}</Badge>
+            {/if}
+            {#if m.costUsd !== null}
+              <span class="font-mono af-mem-cost">${m.costUsd.toFixed(2)}</span>
             {/if}
             {#if m.createdAt}
               <span class="font-mono af-mem-date">{fmtRel(m.createdAt)}</span>
             {/if}
           </div>
-          {#if m.summary}
-            <p class="af-mem-text">{m.summary}</p>
-          {:else if typeof m.value === 'string'}
-            <p class="af-mem-text">{m.value.slice(0, 400)}{(m.value as string).length > 400 ? '…' : ''}</p>
-          {:else if m.key}
-            <p class="af-mem-text font-mono">{m.key}</p>
+          <p class="af-mem-text">{m.value.slice(0, 400)}{m.value.length > 400 ? '…' : ''}</p>
+          {#if m.cycleId || m.itemId}
+            <div class="af-mem-refs">
+              {#if m.cycleId}
+                <span class="af-mem-ref font-mono">cycle {m.cycleId.slice(0, 8)}</span>
+              {/if}
+              {#if m.itemId}
+                <span class="af-mem-ref font-mono">item {m.itemId}</span>
+              {/if}
+            </div>
           {/if}
-          {#if m.tags && m.tags.length > 0}
+          {#if m.tags.length > 0}
             <div class="af-mem-tags">
               {#each m.tags as tag}
                 <span class="af-skill-tag font-mono">{tag}</span>
@@ -692,49 +879,199 @@
 ═══════════════════════════════════════════════════════════════════════════════ -->
 {:else if activeTab === 'config'}
   <div class="af-config-grid">
-    <!-- YAML editor -->
-    <Card noPad>
-      <div class="af-config-header">
-        <span class="af-section-title">AGENT.YAML</span>
-        <div style="display:flex; gap:6px; align-items:center;">
-          {#if configSaved}
-            <span class="af-save-ok">✓ Saved</span>
-          {/if}
-          {#if configSaveError}
-            <span class="af-save-err">{configSaveError}</span>
-          {/if}
-          {#if !configLoading && !configLoadError}
-            <Btn size="sm" onClick={() => { navigator.clipboard?.writeText(configYaml); }}>Copy</Btn>
-          {/if}
-          {#if !configEditing}
-            <Btn size="sm" onClick={loadConfigYaml} disabled={configLoading}>↻ Refresh</Btn>
-            <Btn size="sm" onClick={() => (configEditing = true)} disabled={configLoading || !!configLoadError}>Edit</Btn>
-          {:else}
-            <Btn size="sm" onClick={async () => { configEditing = false; configSaveError = null; await loadConfigYaml(); }}>Cancel</Btn>
-            <Btn size="sm" variant="primary" onClick={saveConfig} disabled={configSaving}>
-              {configSaving ? 'Saving…' : 'Save'}
+    <!-- Left: structured editor + advanced raw YAML -->
+    <div class="af-col">
+      <!-- Structured editor -->
+      <Card noPad>
+        <div class="af-config-header">
+          <span class="af-section-title">AGENT CONFIG</span>
+          <div style="display:flex; gap:6px; align-items:center;">
+            {#if structSaved}
+              <span class="af-save-ok">✓ Saved</span>
+            {/if}
+            {#if structSaveError}
+              <span class="af-save-err">{structSaveError}</span>
+            {/if}
+            <Btn size="sm" onClick={syncEditorFromAgent} disabled={structSaving}>Reset</Btn>
+            <Btn size="sm" variant="primary" onClick={saveStructured} disabled={structSaving}>
+              {structSaving ? 'Saving…' : 'Save'}
             </Btn>
+          </div>
+        </div>
+
+        <div class="af-editor-body">
+          <!-- Model tier picker -->
+          <div class="af-field">
+            <span class="af-field-label" id="af-tier-label">Model tier</span>
+            <div class="af-tier-picker" role="radiogroup" aria-labelledby="af-tier-label">
+              {#each TIER_OPTIONS as tier (tier)}
+                <button
+                  class="af-tier-option af-tier-option-{tier} {editModel === tier ? 'active' : ''}"
+                  role="radio"
+                  aria-checked={editModel === tier}
+                  onclick={() => (editModel = tier)}
+                >{tier}</button>
+              {/each}
+              <span class="af-tier-preview">
+                <ModelChip model={editModel} effort={editEffort} tier={editModel} size="md" />
+              </span>
+            </div>
+          </div>
+
+          <!-- Reasoning effort -->
+          <div class="af-field">
+            <label class="af-field-label" for="af-effort">Reasoning effort</label>
+            <select id="af-effort" class="af-input af-effort-select" bind:value={editEffort}>
+              {#each EFFORT_OPTIONS as e (e)}
+                <option value={e}>{e}</option>
+              {/each}
+            </select>
+          </div>
+
+          <!-- Description -->
+          <div class="af-field">
+            <label class="af-field-label" for="af-description">Description</label>
+            <input
+              id="af-description"
+              class="af-input"
+              type="text"
+              bind:value={editDescription}
+              placeholder="One-line description of this agent's domain"
+            />
+          </div>
+
+          <!-- System prompt -->
+          <div class="af-field">
+            <label class="af-field-label" for="af-system-prompt">
+              System prompt
+              <span class="af-field-hint">(runtime context like memory/knowledge is injected automatically)</span>
+            </label>
+            <textarea
+              id="af-system-prompt"
+              class="af-input af-prompt-editor font-mono"
+              bind:value={editSystemPrompt}
+              spellcheck={false}
+              rows={14}
+            ></textarea>
+          </div>
+
+          <!-- Skills -->
+          <div class="af-field">
+            <span class="af-field-label" id="af-skills-label">Skills</span>
+            <div class="af-chip-list" aria-labelledby="af-skills-label">
+              {#each editSkills as skill (skill)}
+                <span class="af-chip font-mono">
+                  {skill}
+                  <button
+                    class="af-chip-x"
+                    aria-label={`Remove skill ${skill}`}
+                    onclick={() => (editSkills = editSkills.filter(s => s !== skill))}
+                  >×</button>
+                </span>
+              {/each}
+              {#if editSkills.length === 0}
+                <span class="af-chip-empty">No skills assigned.</span>
+              {/if}
+            </div>
+            <div class="af-chip-add">
+              <input
+                class="af-input"
+                type="text"
+                placeholder="Add skill…"
+                aria-label="Add skill"
+                bind:value={newSkill}
+                onkeydown={(e) => { if (e.key === 'Enter') addSkill(); }}
+              />
+              <Btn size="sm" onClick={addSkill} disabled={!newSkill.trim()}>Add</Btn>
+            </div>
+          </div>
+
+          <!-- Tools -->
+          <div class="af-field">
+            <span class="af-field-label" id="af-tools-label">
+              Tools
+              <span class="af-field-hint">(leave empty to inherit from skills)</span>
+            </span>
+            <div class="af-chip-list" aria-labelledby="af-tools-label">
+              {#each editTools as tool (tool)}
+                <span class="af-chip font-mono">
+                  {tool}
+                  <button
+                    class="af-chip-x"
+                    aria-label={`Remove tool ${tool}`}
+                    onclick={() => (editTools = editTools.filter(t => t !== tool))}
+                  >×</button>
+                </span>
+              {/each}
+              {#if editTools.length === 0}
+                <span class="af-chip-empty">Inheriting tools from skills.</span>
+              {/if}
+            </div>
+            <div class="af-chip-add">
+              <input
+                class="af-input"
+                type="text"
+                placeholder="Add tool…"
+                aria-label="Add tool"
+                bind:value={newTool}
+                onkeydown={(e) => { if (e.key === 'Enter') addTool(); }}
+              />
+              <Btn size="sm" onClick={addTool} disabled={!newTool.trim()}>Add</Btn>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <!-- Advanced: raw YAML (GET/PUT :id/raw) -->
+      <Card noPad>
+        <button class="af-raw-toggle" onclick={() => (showRawYaml = !showRawYaml)} aria-expanded={showRawYaml}>
+          <span class="af-section-title">ADVANCED: RAW YAML</span>
+          <span class="af-raw-chevron">{showRawYaml ? '▾' : '▸'}</span>
+        </button>
+        {#if showRawYaml}
+          <div class="af-config-header">
+            <span class="af-section-meta font-mono">{agent.agentId}.yaml</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              {#if configSaved}
+                <span class="af-save-ok">✓ Saved</span>
+              {/if}
+              {#if configSaveError}
+                <span class="af-save-err">{configSaveError}</span>
+              {/if}
+              {#if !configLoading && !configLoadError}
+                <Btn size="sm" onClick={() => { navigator.clipboard?.writeText(configYaml); }}>Copy</Btn>
+              {/if}
+              {#if !configEditing}
+                <Btn size="sm" onClick={loadConfigYaml} disabled={configLoading}>↻ Refresh</Btn>
+                <Btn size="sm" onClick={() => (configEditing = true)} disabled={configLoading || !!configLoadError}>Edit</Btn>
+              {:else}
+                <Btn size="sm" onClick={async () => { configEditing = false; configSaveError = null; await loadConfigYaml(); }}>Cancel</Btn>
+                <Btn size="sm" variant="primary" onClick={saveConfig} disabled={configSaving}>
+                  {configSaving ? 'Saving…' : 'Save'}
+                </Btn>
+              {/if}
+            </div>
+          </div>
+          {#if configLoading}
+            <div class="af-loading-state">Loading YAML…</div>
+          {:else if configLoadError}
+            <div class="af-error-state">
+              {configLoadError}
+              <Btn size="sm" onClick={loadConfigYaml}>Retry</Btn>
+            </div>
+          {:else if configEditing}
+            <textarea
+              class="af-yaml-editor font-mono"
+              bind:value={configYaml}
+              spellcheck={false}
+              aria-label="Agent YAML configuration"
+            ></textarea>
+          {:else}
+            <pre class="af-yaml-preview font-mono">{configYaml}</pre>
           {/if}
-        </div>
-      </div>
-      {#if configLoading}
-        <div class="af-loading-state">Loading YAML…</div>
-      {:else if configLoadError}
-        <div class="af-error-state">
-          {configLoadError}
-          <Btn size="sm" onClick={loadConfigYaml}>Retry</Btn>
-        </div>
-      {:else if configEditing}
-        <textarea
-          class="af-yaml-editor font-mono"
-          bind:value={configYaml}
-          spellcheck={false}
-          aria-label="Agent YAML configuration"
-        ></textarea>
-      {:else}
-        <pre class="af-yaml-preview font-mono">{configYaml}</pre>
-      {/if}
-    </Card>
+        {/if}
+      </Card>
+    </div>
 
     <!-- Right panel -->
     <div class="af-col">
@@ -956,10 +1293,16 @@
     display: flex; align-items: center; gap: 8px;
     margin-bottom: 8px;
   }
-  .af-mem-source { font-size: 11px; color: var(--af-dim); }
+  .af-mem-cost { font-size: 10px; color: var(--af-warning); }
   .af-mem-date { font-size: 10px; color: var(--af-dim); margin-left: auto; }
   .af-mem-text {
     margin: 0; font-size: 13px; color: var(--af-text); line-height: 1.55;
+  }
+  .af-mem-refs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .af-mem-ref {
+    font-size: 10px; padding: 2px 7px;
+    border-radius: 4px; background: var(--af-surface2);
+    border: 1px solid var(--af-border2); color: var(--af-dim);
   }
   .af-mem-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 
@@ -975,6 +1318,84 @@
     justify-content: space-between;
     padding: 12px 16px; border-bottom: 1px solid var(--af-border);
   }
+
+  /* ── Structured editor ────────────────────────────────────────────── */
+  .af-editor-body {
+    display: flex; flex-direction: column; gap: 16px;
+    padding: 14px 16px;
+  }
+  .af-field { display: flex; flex-direction: column; gap: 6px; }
+  .af-field-label {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.06em; color: var(--af-dim);
+    text-transform: uppercase;
+  }
+  .af-field-hint {
+    font-weight: 400; letter-spacing: 0.02em;
+    color: var(--af-faint); text-transform: none;
+  }
+  .af-input {
+    padding: 6px 10px;
+    background: var(--af-surface2);
+    border: 1px solid var(--af-border2);
+    border-radius: 6px;
+    color: var(--af-text);
+    font-size: 12px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .af-input:focus { border-color: var(--af-accent); }
+  .af-effort-select { max-width: 160px; cursor: pointer; }
+  .af-prompt-editor {
+    font-family: var(--af-font-mono); font-size: 11px;
+    line-height: 1.7; resize: vertical;
+    min-height: 220px; max-height: 520px;
+    white-space: pre-wrap;
+  }
+  .af-tier-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .af-tier-option {
+    padding: 4px 12px; border-radius: 999px;
+    font-size: 11px; font-weight: 500; cursor: pointer;
+    border: 1px solid var(--af-border2); background: transparent;
+    color: var(--af-dim); text-transform: uppercase; letter-spacing: 0.04em;
+    transition: border-color 150ms, color 150ms, background 150ms;
+  }
+  .af-tier-option:hover { background: var(--af-surface2); color: var(--af-text); }
+  .af-tier-option.af-tier-option-fable.active {
+    background: color-mix(in srgb, var(--af-fable, var(--af-opus)) 12%, transparent);
+    color: var(--af-fable, var(--af-opus));
+    border-color: color-mix(in srgb, var(--af-fable, var(--af-opus)) 40%, transparent);
+  }
+  .af-tier-option.af-tier-option-opus.active   { background: rgba(245,166,35,0.12);  color: var(--af-opus);   border-color: rgba(245,166,35,0.4); }
+  .af-tier-option.af-tier-option-sonnet.active { background: rgba(122,160,247,0.12); color: var(--af-sonnet); border-color: rgba(122,160,247,0.4); }
+  .af-tier-option.af-tier-option-haiku.active  { background: rgba(91,211,148,0.12);  color: var(--af-haiku);  border-color: rgba(91,211,148,0.4); }
+  .af-tier-preview { margin-left: 4px; }
+  .af-chip-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; }
+  .af-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; padding: 3px 6px 3px 8px;
+    border-radius: 4px; background: var(--af-surface2);
+    border: 1px solid var(--af-border2); color: var(--af-muted);
+  }
+  .af-chip-x {
+    background: none; border: none; padding: 0 2px;
+    color: var(--af-dim); cursor: pointer;
+    font-size: 12px; line-height: 1;
+  }
+  .af-chip-x:hover { color: var(--af-danger); }
+  .af-chip-empty { font-size: 11px; color: var(--af-faint); align-self: center; }
+  .af-chip-add { display: flex; gap: 6px; align-items: center; max-width: 320px; }
+  .af-chip-add .af-input { flex: 1; }
+
+  /* ── Advanced raw YAML toggle ─────────────────────────────────────── */
+  .af-raw-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 12px 16px;
+    background: none; border: none; cursor: pointer;
+    text-align: left;
+  }
+  .af-raw-toggle:hover .af-section-title { color: var(--af-text); }
+  .af-raw-chevron { font-size: 11px; color: var(--af-dim); }
   .af-yaml-preview {
     margin: 0; padding: 14px 18px;
     font-size: 11px; color: var(--af-muted); line-height: 1.7;
@@ -988,7 +1409,6 @@
     background: var(--af-bg); border: none; outline: none;
     resize: vertical; min-height: 400px; max-height: 640px;
     white-space: pre; overflow: auto; box-sizing: border-box;
-    spellcheck: false;
   }
   .af-save-ok { font-size: 11px; color: var(--af-success); }
   .af-save-err { font-size: 11px; color: var(--af-danger); max-width: 200px; }
