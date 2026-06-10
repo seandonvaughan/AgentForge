@@ -6,8 +6,8 @@
    * Composition:
    *   1. Page header — crumbs, title, subtitle, actions.
    *   2. Stat strip — 5 KPI cards (total agents, teams, live now, total spend, top spender).
-   *   3. Filter bar — search, reasoning profile pills, team select.
-   *   4. Agent table — name, ID, Codex profile, team badge, reasoning effort, description.
+   *   3. Filter bar — search, capability-tier pills (fable/opus/sonnet/haiku), team select.
+   *   4. Agent table — name, ID, resolved model profile, team badge, reasoning effort, description.
    *
    * Data: GET /api/v5/agents (SSR via +page.server.ts + client refresh every 15s).
    * Sparklines (24h invocations) require GET /api/v5/sessions?limit=100 — aggregated client-side.
@@ -17,20 +17,21 @@
     Badge, Btn, Card, DistBar, ModelChip, PulseDot, Sparkline,
   } from '$lib/components/v2';
   import type { PageData } from './$types';
-  import type { AgentListItem } from './agents-utils';
+  import type { AgentListItem, CapabilityTier } from './agents-utils';
   import { matchesAgentFilter } from './agents-utils';
 
   let { data }: { data: PageData } = $props();
 
   // ── State ───────────────────────────────────────────────────────────────────
   let search = $state('');
-  let filterModel: '' | 'opus' | 'sonnet' | 'haiku' = $state('');
+  let filterModel: '' | CapabilityTier = $state('');
   let filterTeam = $state('');
-  const PROFILE_FILTERS: ReadonlyArray<{ tier: '' | 'opus' | 'sonnet' | 'haiku'; label: string }> = [
+  const PROFILE_FILTERS: ReadonlyArray<{ tier: '' | CapabilityTier; label: string }> = [
     { tier: '', label: 'all' },
-    { tier: 'opus', label: 'xhigh' },
-    { tier: 'sonnet', label: 'high' },
-    { tier: 'haiku', label: 'medium' },
+    { tier: 'fable', label: 'fable' },
+    { tier: 'opus', label: 'opus' },
+    { tier: 'sonnet', label: 'sonnet' },
+    { tier: 'haiku', label: 'haiku' },
   ];
 
   let liveAgents = $state<AgentListItem[]>(data.agents ?? []);
@@ -101,6 +102,7 @@
   let unassignedCount = $derived(liveAgents.filter(a => !a.team).length);
 
   let profileCount = $derived({
+    fable:  liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'fable').length,
     opus:   liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'opus').length,
     sonnet: liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'sonnet').length,
     haiku:  liveAgents.filter(a => (a.capabilityTier ?? a.model) === 'haiku').length,
@@ -163,14 +165,16 @@
   }
 
   function profileModel(agent: AgentListItem): string {
-    return agent.modelProfile?.modelId ?? 'gpt-5.3-codex';
+    // Fall back to the bare tier name — ModelChip resolves it to the primary
+    // (Claude) family model id via codexProfileFor.
+    return agent.modelProfile?.modelId ?? capabilityTier(agent);
   }
 
   function profileEffort(agent: AgentListItem): string {
     return agent.modelProfile?.effort ?? agent.effort ?? 'medium';
   }
 
-  function capabilityTier(agent: AgentListItem): 'opus' | 'sonnet' | 'haiku' {
+  function capabilityTier(agent: AgentListItem): CapabilityTier {
     return agent.capabilityTier ?? agent.model;
   }
 
@@ -208,14 +212,18 @@
     <div class="af-stat-label">Total agents</div>
     <div class="af-stat-value font-mono">{liveAgents.length}</div>
     <DistBar segments={[
+      { value: profileCount.fable,  color: 'var(--af-fable, var(--af-opus))' },
       { value: profileCount.opus,   color: 'var(--af-opus)'   },
       { value: profileCount.sonnet, color: 'var(--af-sonnet)' },
       { value: profileCount.haiku,  color: 'var(--af-haiku)'  },
     ]} h={4} />
     <div class="af-tier-row">
-      <span><span style="color:var(--af-opus)">●</span> <span class="font-mono af-tier-cnt">{profileCount.opus}</span> xhigh</span>
-      <span><span style="color:var(--af-sonnet)">●</span> <span class="font-mono af-tier-cnt">{profileCount.sonnet}</span> high</span>
-      <span><span style="color:var(--af-haiku)">●</span> <span class="font-mono af-tier-cnt">{profileCount.haiku}</span> medium</span>
+      {#if profileCount.fable > 0}
+        <span><span style="color:var(--af-fable, var(--af-opus))">●</span> <span class="font-mono af-tier-cnt">{profileCount.fable}</span> fable</span>
+      {/if}
+      <span><span style="color:var(--af-opus)">●</span> <span class="font-mono af-tier-cnt">{profileCount.opus}</span> opus</span>
+      <span><span style="color:var(--af-sonnet)">●</span> <span class="font-mono af-tier-cnt">{profileCount.sonnet}</span> sonnet</span>
+      <span><span style="color:var(--af-haiku)">●</span> <span class="font-mono af-tier-cnt">{profileCount.haiku}</span> haiku</span>
     </div>
   </Card>
 
@@ -270,7 +278,7 @@
     bind:value={search}
     aria-label="Search agents"
   />
-  <span class="af-filter-label">REASONING</span>
+  <span class="af-filter-label">TIER</span>
   {#each PROFILE_FILTERS as profile}
     <button
       class="af-pill af-pill-{profile.tier || 'all'} {filterModel === profile.tier ? 'active' : ''}"
@@ -311,7 +319,7 @@
     <table class="af-table data-table">
       <thead>
         <tr>
-          {#each ['Name', 'Agent ID', 'Codex model', 'Team', 'Reasoning', 'Cycle spend', 'Last active', 'Description'] as h}
+          {#each ['Name', 'Agent ID', 'Model', 'Team', 'Reasoning', 'Cycle spend', 'Last active', 'Description'] as h}
             <th class="af-th">{h}</th>
           {/each}
         </tr>
@@ -561,6 +569,11 @@
   }
   .af-pill:hover { background: var(--af-surface2); color: var(--af-text); }
   .af-pill.active.af-pill-all    { background: rgba(99,102,241,0.12); color: var(--af-accent); border-color: rgba(99,102,241,0.4); }
+  .af-pill.active.af-pill-fable  {
+    background: color-mix(in srgb, var(--af-fable, var(--af-opus)) 12%, transparent);
+    color: var(--af-fable, var(--af-opus));
+    border-color: color-mix(in srgb, var(--af-fable, var(--af-opus)) 40%, transparent);
+  }
   .af-pill.active.af-pill-opus   { background: rgba(245,166,35,0.12);  color: var(--af-opus);   border-color: rgba(245,166,35,0.4); }
   .af-pill.active.af-pill-sonnet { background: rgba(122,160,247,0.12); color: var(--af-sonnet); border-color: rgba(122,160,247,0.4); }
   .af-pill.active.af-pill-haiku  { background: rgba(91,211,148,0.12);  color: var(--af-haiku);  border-color: rgba(91,211,148,0.4); }
