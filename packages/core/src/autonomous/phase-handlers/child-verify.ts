@@ -302,27 +302,9 @@ async function ensureWorktreeDependencies(
   // near-instant on a warm store when the tree is actually complete.
   const installed = (marker: string): boolean =>
     existsSync(join(worktreePath, 'node_modules', marker));
-  const install: { cmd: string; args: string[] } | null =
-    detected.packageManager === 'pnpm'
-      ? installed('.modules.yaml')
-        ? null
-        : { cmd: 'corepack', args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'] }
-      : detected.packageManager === 'yarn'
-        ? installed('.yarn-state.yml') || installed('.yarn-integrity')
-          ? null
-          : { cmd: 'yarn', args: ['install', '--frozen-lockfile'] }
-        : existsSync(join(worktreePath, 'package-lock.json'))
-          ? installed('.package-lock.json')
-            ? null
-            : { cmd: 'npm', args: ['ci'] }
-          : null; // npm repo without a lockfile — npx self-provisions; skip.
+  const install = dependencyInstallCommand(worktreePath, detected, installed);
   if (!install) return null;
-  let res: ChildVerifyCommandResult;
-  try {
-    res = await runner(install.cmd, install.args, worktreePath);
-  } catch (err) {
-    res = { ok: false, code: null, output: err instanceof Error ? err.message : String(err) };
-  }
+  const res = await runDependencyInstall(worktreePath, install, runner);
   if (res.ok) return null;
   return {
     check: 'deps',
@@ -332,6 +314,61 @@ async function ensureWorktreeDependencies(
       `${install.cmd} ${install.args.join(' ')}`,
     outputTail: tail(res.output),
   };
+}
+
+function dependencyInstallCommand(
+  worktreePath: string,
+  detected: DetectedPackageCommands,
+  installed: (marker: string) => boolean,
+  force = false,
+): { cmd: string; args: string[] } | null {
+  if (detected.packageManager === 'pnpm') {
+    if (!force && installed('.modules.yaml')) return null;
+    return {
+      cmd: 'corepack',
+      args: [
+        'pnpm',
+        'install',
+        '--frozen-lockfile',
+        '--prefer-offline',
+        ...(force ? ['--force'] : []),
+      ],
+    };
+  }
+  if (detected.packageManager === 'yarn') {
+    if (!force && (installed('.yarn-state.yml') || installed('.yarn-integrity'))) return null;
+    return { cmd: 'yarn', args: ['install', '--frozen-lockfile', ...(force ? ['--force'] : [])] };
+  }
+  if (!existsSync(join(worktreePath, 'package-lock.json'))) {
+    return null; // npm repo without a lockfile — npx self-provisions; skip.
+  }
+  if (!force && installed('.package-lock.json')) return null;
+  return { cmd: 'npm', args: ['ci'] };
+}
+
+async function runDependencyInstall(
+  worktreePath: string,
+  install: { cmd: string; args: string[] },
+  runner: ChildVerifyCommandRunner,
+): Promise<ChildVerifyCommandResult> {
+  try {
+    return await runner(install.cmd, install.args, worktreePath);
+  } catch (err) {
+    return { ok: false, code: null, output: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function runChildVerifyCommand(
+  runner: ChildVerifyCommandRunner,
+  cmd: string,
+  args: string[],
+  worktreePath: string,
+): Promise<ChildVerifyCommandResult> {
+  try {
+    return await runner(cmd, args, worktreePath);
+  } catch (err) {
+    return { ok: false, code: null, output: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** The default production command runner: execFile, no shell. Output is tailed. */
@@ -391,6 +428,15 @@ function formatCommandExit(result: ChildVerifyCommandResult): string {
   if (result.code !== null) return `exit ${result.code}`;
   if (result.signal) return `signal ${result.signal}`;
   return 'signal';
+}
+
+function isDependencyStartupFailure(output: string): boolean {
+  return (
+    output.includes('ERR_PACKAGE_IMPORT_NOT_DEFINED') ||
+    output.includes('ERR_MODULE_NOT_FOUND') ||
+    output.includes('Cannot find module') ||
+    output.includes('ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL')
+  );
 }
 
 /**
@@ -513,19 +559,37 @@ export async function verifyChildWorktree(
       affectedTests,
     };
   }
+  let repairedDependencies = false;
+  const repairDependenciesOnce = async (): Promise<ChildVerifyFailure | null> => {
+    if (repairedDependencies) return null;
+    repairedDependencies = true;
+    const installed = (marker: string): boolean =>
+      existsSync(join(worktreePath, 'node_modules', marker));
+    const install = dependencyInstallCommand(worktreePath, detected, installed, true);
+    if (!install) return null;
+    const repair = await runDependencyInstall(worktreePath, install, runner);
+    if (repair.ok) return null;
+    return {
+      check: 'deps',
+      severity: 'failure',
+      message:
+        `Worktree dependency repair failed (${formatCommandExit(repair)}): ` +
+        `${install.cmd} ${install.args.join(' ')}`,
+      outputTail: tail(repair.output),
+    };
+  };
 
   // ── (2) Scoped typecheck inside the worktree ────────────────────────────
   const tc = splitCommand(typeCheckCommand);
   if (tc.cmd.length > 0) {
-    let res: ChildVerifyCommandResult;
-    try {
-      res = await runner(tc.cmd, tc.args, worktreePath);
-    } catch (err) {
-      res = {
-        ok: false,
-        code: null,
-        output: err instanceof Error ? err.message : String(err),
-      };
+    let res = await runChildVerifyCommand(runner, tc.cmd, tc.args, worktreePath);
+    if (!res.ok && isDependencyStartupFailure(res.output)) {
+      const repairFailure = await repairDependenciesOnce();
+      if (repairFailure) {
+        failures.push(repairFailure);
+      } else {
+        res = await runChildVerifyCommand(runner, tc.cmd, tc.args, worktreePath);
+      }
     }
     if (!res.ok) {
       failures.push({
@@ -548,15 +612,14 @@ export async function verifyChildWorktree(
         ex.includes('/') ? ex : `**/${ex}`,
       ]);
       const testArgs = [...vt.args, 'related', '--run', ...excludeArgs, ...affectedTests];
-      let res: ChildVerifyCommandResult;
-      try {
-        res = await runner(vt.cmd, testArgs, worktreePath);
-      } catch (err) {
-        res = {
-          ok: false,
-          code: null,
-          output: err instanceof Error ? err.message : String(err),
-        };
+      let res = await runChildVerifyCommand(runner, vt.cmd, testArgs, worktreePath);
+      if (!res.ok && isDependencyStartupFailure(res.output)) {
+        const repairFailure = await repairDependenciesOnce();
+        if (repairFailure) {
+          failures.push(repairFailure);
+        } else {
+          res = await runChildVerifyCommand(runner, vt.cmd, testArgs, worktreePath);
+        }
       }
       if (!res.ok) {
         failures.push({

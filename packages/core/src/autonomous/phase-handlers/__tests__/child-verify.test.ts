@@ -121,6 +121,50 @@ describe('verifyChildWorktree — failing scoped tests', () => {
   });
 });
 
+describe('verifyChildWorktree — dependency startup repair', () => {
+  it('force-reinstalls dependencies once and retries tests on Vitest startup import failures', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-repair-'));
+    try {
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      mkdirSync(join(dir, 'node_modules'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules', '.modules.yaml'), 'installed\n');
+      const calls: Array<{ cmd: string; args: string[] }> = [];
+      let testAttempts = 0;
+      const runner: ChildVerifyCommandRunner = async (cmd, args) => {
+        calls.push({ cmd, args });
+        if (args.includes('related')) {
+          testAttempts += 1;
+          if (testAttempts === 1) {
+            return {
+              ok: false,
+              code: 1,
+              output: "TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier '#module-evaluator' is not defined",
+            };
+          }
+        }
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const result = await verifyChildWorktree({
+        worktreePath: dir,
+        changedFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        declaredFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        runner,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(testAttempts).toBe(2);
+      const repairCall = calls.find((call) => call.args.includes('install'));
+      expect(repairCall).toEqual({
+        cmd: 'corepack',
+        args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline', '--force'],
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('verifyChildWorktree — failing scoped typecheck', () => {
   it('lists a typecheck failure with the captured output tail', async () => {
     const { runner } = runnerWith({
