@@ -10,6 +10,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   verifyChildWorktree,
+  createSerialChildVerifyCommandRunner,
   isTestFilePath,
   isCiConfigPath,
   selectChildAffectedFiles,
@@ -225,6 +226,42 @@ describe('verifyChildWorktree — runner rejection is captured, never thrown', (
     const tc = result.failures.find((f) => f.check === 'typecheck');
     expect(tc).toBeDefined();
     expect(tc!.outputTail ?? tc!.message).toContain('ENOENT');
+  });
+});
+
+describe('createSerialChildVerifyCommandRunner', () => {
+  it('runs concurrent command invocations one at a time', async () => {
+    const started: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const baseRunner: ChildVerifyCommandRunner = async (cmd) => {
+      started.push(cmd);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (cmd === 'first') await firstGate;
+      active -= 1;
+      return { ok: true, code: 0, output: cmd };
+    };
+
+    const runner = createSerialChildVerifyCommandRunner(baseRunner);
+    const first = runner('first', [], '/tmp/a');
+    const second = runner('second', [], '/tmp/b');
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started).toEqual(['first']);
+
+    releaseFirst();
+    await first;
+    await second;
+
+    expect(started).toEqual(['first', 'second']);
+    expect(maxActive).toBe(1);
   });
 });
 

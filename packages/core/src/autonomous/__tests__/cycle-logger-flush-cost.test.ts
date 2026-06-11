@@ -174,6 +174,51 @@ describe('CycleLogger.flushCycleCost', () => {
   });
 });
 
+describe('CycleLogger.logCycleResult', () => {
+  it('does not overwrite a higher live cost snapshot with a zero terminal failed result', () => {
+    const logger = makeLogger();
+    logger.flushCycleCost(36.45);
+
+    logger.logCycleResult({
+      cycleId: CYCLE_ID,
+      sprintVersion: '1.0.0',
+      stage: 'failed',
+      startedAt: '2026-06-11T19:13:01.595Z',
+      completedAt: '2026-06-11T19:36:32.192Z',
+      durationMs: 1410597,
+      cost: {
+        totalUsd: 0,
+        budgetUsd: 100,
+        byAgent: {},
+        byPhase: {},
+      },
+      tests: {
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        total: 0,
+        passRate: 0,
+        newFailures: [],
+      },
+      git: {
+        branch: '',
+        commitSha: null,
+        filesChanged: [],
+      },
+      pr: {
+        url: null,
+        number: null,
+        draft: false,
+      },
+      error: 'execute: execute phase reported blocked',
+    } as any);
+
+    const data = readCycle();
+    expect(data['stage']).toBe('failed');
+    expect((data['cost'] as Record<string, unknown>)['totalUsd']).toBe(36.45);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // PhaseScheduler integration — cost flush happens after each phase
 // ---------------------------------------------------------------------------

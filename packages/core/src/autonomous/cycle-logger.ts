@@ -298,6 +298,11 @@ export class CycleLogger {
       this.readProviderUsageFromCycleFile()
       ?? this.normalizeProviderUsage((result as CycleResult & { providerUsage?: unknown }).providerUsage);
     const lastHeartbeatAt = this.readLastHeartbeatAtFromCycleFile();
+    const existingTotalUsd = this.readCostTotalUsdFromCycleFile();
+    const totalUsd =
+      existingTotalUsd === undefined
+        ? result.cost.totalUsd
+        : Math.max(existingTotalUsd, result.cost.totalUsd);
     const phaseErrorSummary =
       this.readPhaseErrorSummary()
       ?? this.readPhaseErrorSummaryFromCycleFile()
@@ -308,6 +313,10 @@ export class CycleLogger {
       phaseErrorSummary: PhaseErrorSummary;
     } = {
       ...result,
+      cost: {
+        ...result.cost,
+        totalUsd,
+      },
       ...(currentProviderUsage !== undefined ? { providerUsage: currentProviderUsage } : {}),
       staleness: computeCycleStaleness(lastHeartbeatAt, Date.now()),
       phaseErrorSummary,
@@ -397,6 +406,22 @@ export class CycleLogger {
       if (!existsSync(cyclePath)) return undefined;
       const raw = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
       return this.normalizeHeartbeatAt(raw['lastHeartbeatAt']);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readCostTotalUsdFromCycleFile(): number | undefined {
+    try {
+      const cyclePath = join(this.cycleDir, 'cycle.json');
+      if (!existsSync(cyclePath)) return undefined;
+      const raw = JSON.parse(readFileSync(cyclePath, 'utf8')) as Record<string, unknown>;
+      const cost = raw['cost'];
+      if (!cost || typeof cost !== 'object') return undefined;
+      const totalUsd = (cost as Record<string, unknown>)['totalUsd'];
+      return typeof totalUsd === 'number' && Number.isFinite(totalUsd)
+        ? totalUsd
+        : undefined;
     } catch {
       return undefined;
     }

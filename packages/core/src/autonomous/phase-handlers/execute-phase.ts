@@ -560,25 +560,6 @@ export function isCoderClassItem(item: { assignee: string; tags?: string[] }): b
 }
 
 /**
- * P0.5 — Default per-child verify command runner: execFile (no shell), output
- * tailed by the caller. Distinct from the parent worktree-change helpers so the
- * runner can be swapped for a mock in unit tests via ExecutePhaseOptions.
- */
-const defaultChildVerifyRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
-  try {
-    const { stdout, stderr } = await execFileAsync(cmd, args, {
-      cwd,
-      maxBuffer: 50 * 1024 * 1024,
-    });
-    return { ok: true, code: 0, output: `${stdout.toString()}${stderr.toString()}` };
-  } catch (err: unknown) {
-    const e = err as { code?: number; stdout?: string | Buffer; stderr?: string | Buffer };
-    const out = `${e.stdout?.toString() ?? ''}${e.stderr?.toString() ?? ''}`;
-    return { ok: false, code: typeof e.code === 'number' ? e.code : null, output: out };
-  }
-};
-
-/**
  * P0.5 — Whether the per-child verify bar should require a test among the
  * child's changed files. True when the item explicitly opts in
  * (`requiresTests`) or carries a tag signalling test-mandatory work. Defaults
@@ -1517,7 +1498,9 @@ export async function runExecutePhase(
               changedFiles: changedForVerify,
               declaredFiles: itemFiles.get(item.id) ?? [],
               requiresTests: childRequiresTests(item),
-              runner: options.childVerifyRunner ?? defaultChildVerifyRunner,
+              ...(options.childVerifyRunner !== undefined
+                ? { runner: options.childVerifyRunner }
+                : {}),
               ...(options.childVerifyTypeCheckCommand !== undefined
                 ? { typeCheckCommand: options.childVerifyTypeCheckCommand }
                 : {}),

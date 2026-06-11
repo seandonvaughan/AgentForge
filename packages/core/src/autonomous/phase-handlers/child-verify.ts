@@ -95,6 +95,8 @@ export interface ChildVerifyCommandResult {
   ok: boolean;
   /** Exit code when known (null for signal-only termination). */
   code: number | null;
+  /** Terminating signal when known. */
+  signal?: string | null;
   /** Combined stdout + stderr (the caller tails it for the failure entry). */
   output: string;
 }
@@ -109,6 +111,20 @@ export type ChildVerifyCommandRunner = (
   args: string[],
   cwd: string,
 ) => Promise<ChildVerifyCommandResult>;
+
+export function createSerialChildVerifyCommandRunner(
+  baseRunner: ChildVerifyCommandRunner,
+): ChildVerifyCommandRunner {
+  let tail: Promise<void> = Promise.resolve();
+  return async (cmd, args, cwd) => {
+    const run = tail.then(() => baseRunner(cmd, args, cwd));
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+}
 
 /** A single deterministic failure (or warning) produced by a child-verify check. */
 export interface ChildVerifyFailure {
@@ -308,14 +324,14 @@ async function ensureWorktreeDependencies(
     check: 'deps',
     severity: 'failure',
     message:
-      `Worktree dependency install failed (exit ${res.code ?? 'signal'}): ` +
+      `Worktree dependency install failed (${formatCommandExit(res)}): ` +
       `${install.cmd} ${install.args.join(' ')}`,
     outputTail: tail(res.output),
   };
 }
 
 /** The default production command runner: execFile, no shell. Output is tailed. */
-const realCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
+const rawRealCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
   try {
     const { stdout, stderr } = await execFileAsync(cmd, args, {
       cwd,
@@ -324,11 +340,25 @@ const realCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
     });
     return { ok: true, code: 0, output: `${stdout.toString()}${stderr.toString()}` };
   } catch (err: unknown) {
-    const e = err as { code?: number; stdout?: string | Buffer; stderr?: string | Buffer };
+    const e = err as {
+      code?: number;
+      signal?: string | null;
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+      message?: string;
+    };
     const out = `${e.stdout?.toString() ?? ''}${e.stderr?.toString() ?? ''}`;
-    return { ok: false, code: typeof e.code === 'number' ? e.code : null, output: out };
+    const output = out.length > 0 ? out : e.message ?? '';
+    return {
+      ok: false,
+      code: typeof e.code === 'number' ? e.code : null,
+      ...(typeof e.signal === 'string' ? { signal: e.signal } : {}),
+      output,
+    };
   }
 };
+
+const realCommandRunner = createSerialChildVerifyCommandRunner(rawRealCommandRunner);
 
 /** Parse a single command string into [cmd, ...args] on whitespace. */
 function splitCommand(command: string): { cmd: string; args: string[] } {
@@ -339,6 +369,12 @@ function splitCommand(command: string): { cmd: string; args: string[] } {
 function tail(output: string): string {
   if (output.length <= OUTPUT_TAIL_LIMIT) return output;
   return output.slice(output.length - OUTPUT_TAIL_LIMIT);
+}
+
+function formatCommandExit(result: ChildVerifyCommandResult): string {
+  if (result.code !== null) return `exit ${result.code}`;
+  if (result.signal) return `signal ${result.signal}`;
+  return 'signal';
 }
 
 /**
@@ -479,7 +515,7 @@ export async function verifyChildWorktree(
       failures.push({
         check: 'typecheck',
         severity: 'failure',
-        message: `Scoped typecheck failed (exit ${res.code ?? 'signal'}).`,
+        message: `Scoped typecheck failed (${formatCommandExit(res)}).`,
         outputTail: tail(res.output),
       });
     }
@@ -511,7 +547,7 @@ export async function verifyChildWorktree(
           check: 'tests',
           severity: 'failure',
           message:
-            `Scoped affected tests failed (exit ${res.code ?? 'signal'}) for ` +
+            `Scoped affected tests failed (${formatCommandExit(res)}) for ` +
             `${affectedTests.length} file(s).`,
           outputTail: tail(res.output),
         });
