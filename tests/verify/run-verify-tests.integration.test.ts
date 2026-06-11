@@ -62,6 +62,62 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     expect(summary.exitCode).toBe(0);
     expect(summary.oomRetryCount).toBe(0);
     expect(summary.workers).toBeGreaterThanOrEqual(1);
+    expect(summary.workerSizing.workers).toBe(summary.workers);
+    expect(summary.workerSizing.availableGb).toBeGreaterThanOrEqual(0);
+    expect(summary.workerSizing.freeGb).toBeGreaterThanOrEqual(0);
+    expect(summary.workerSizing.totalGb).toBeGreaterThan(0);
+    expect(summary.workerSizing.cores).toBeGreaterThan(0);
+    expect(summary.workerSizing.reserveGb).toBe(1);
+    expect(summary.workerSizing.perWorkerGb).toBe(1);
+    expect(summary.workerSizing.minWorkers).toBe(2);
+    expect(summary.workerSizing.computedWorkers).toBeGreaterThanOrEqual(1);
+    expect(res.stderr).toContain('[verify-gate] workerSizing ');
+    expect(res.stderr).toContain('availableGb=');
+  });
+
+  it('honors available-memory and minimum-worker environment overrides', () => {
+    const res = spawnSync(process.execPath, [RUNNER], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        AGENTFORGE_VERIFY_SUMMARY_DIR: fixture,
+        AGENTFORGE_CHANGED_FILES: '',
+        AGENTFORGE_VERIFY_AVAILABLE_GB: '1',
+        AGENTFORGE_VERIFY_MIN_WORKERS: '4',
+      },
+    });
+
+    expect(res.status, res.stderr).toBe(0);
+    const summary = JSON.parse(readFileSync(join(fixture, 'verify-gate-summary.json'), 'utf8'));
+    expect(summary.workers).toBe(4);
+    expect(summary.workerSizing.availableGb).toBe(1);
+    expect(summary.workerSizing.availableSource).toBe('env');
+    expect(summary.workerSizing.minWorkers).toBe(4);
+    expect(summary.workerSizing.computedWorkers).toBe(1);
+    expect(res.stderr).toContain('"availableSource":"env"');
+    expect(res.stderr).toContain('"minWorkers":4');
+    expect(res.stderr).toContain('"workers":4');
+  });
+
+  it('clamps workers to at least two when available memory is low', () => {
+    const res = spawnSync(process.execPath, [RUNNER], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        AGENTFORGE_VERIFY_SUMMARY_DIR: fixture,
+        AGENTFORGE_CHANGED_FILES: '',
+        AGENTFORGE_VERIFY_AVAILABLE_GB: '0',
+      },
+    });
+
+    expect(res.status, res.stderr).toBe(0);
+    const summary = JSON.parse(readFileSync(join(fixture, 'verify-gate-summary.json'), 'utf8'));
+    expect(summary.workers).toBe(2);
+    expect(summary.workerSizing.availableGb).toBe(0);
+    expect(summary.workerSizing.minWorkers).toBe(2);
+    expect(summary.workerSizing.computedWorkers).toBe(1);
   });
 
   it('forwards appended --reporter=json --outputFile to vitest (the RealTestRunner contract)', () => {
