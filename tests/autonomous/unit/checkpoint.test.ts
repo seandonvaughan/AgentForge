@@ -3,7 +3,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  getCompletedExecuteItems,
+  readExecuteCheckpoint,
   updateCycleCheckpoint,
+  writeExecuteCheckpointItem,
   writeMergedCycleCheckpoint,
 } from '../../../packages/core/src/autonomous/checkpoint.js';
 import type { CycleCheckpoint } from '../../../packages/core/src/autonomous/cycle-artifacts/cycle-checkpoint.js';
@@ -133,6 +136,129 @@ describe('autonomous cycle checkpoint manager', () => {
           'child-1': { ok: true },
           'child-2': { ok: true },
         },
+      },
+    });
+  });
+});
+
+describe('autonomous execute checkpoint metadata', () => {
+  let tmpDir: string;
+  const cycleId = 'execute-checkpoint-0001';
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-execute-checkpoint-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function cycleDir(): string {
+    return join(tmpDir, '.agentforge', 'cycles', cycleId);
+  }
+
+  function checkpointPath(): string {
+    return join(cycleDir(), 'checkpoint-execute.json');
+  }
+
+  it('serializes completed item cost and agent metadata', () => {
+    writeExecuteCheckpointItem(tmpDir, {
+      cycleId,
+      itemId: 'child-2',
+      status: 'completed',
+      costUsd: 1.234567,
+      agentId: 'coder',
+      totalItems: 3,
+      completedAt: '2026-06-11T00:02:00.000Z',
+    });
+
+    const written = JSON.parse(readFileSync(checkpointPath(), 'utf8'));
+    expect(written).toMatchObject({
+      cycleId,
+      phase: 'execute',
+      schemaVersion: 3,
+      completedItemIds: ['child-2'],
+      items: {
+        'child-2': {
+          itemId: 'child-2',
+          status: 'completed',
+          costUsd: 1.234567,
+          agentId: 'coder',
+          completedAt: '2026-06-11T00:02:00.000Z',
+        },
+      },
+    });
+
+    expect(getCompletedExecuteItems(tmpDir, cycleId)).toEqual({
+      'child-2': {
+        itemId: 'child-2',
+        status: 'completed',
+        costUsd: 1.234567,
+        agentId: 'coder',
+        completedAt: '2026-06-11T00:02:00.000Z',
+      },
+    });
+  });
+
+  it('deserializes legacy execute checkpoints with completed item metadata defaults', () => {
+    mkdirSync(cycleDir(), { recursive: true });
+    writeFileSync(
+      checkpointPath(),
+      JSON.stringify(
+        {
+          cycleId,
+          phase: 'execute',
+          completedItemIds: ['child-1'],
+          currentItemId: null,
+          totalItems: 2,
+          lastUpdatedAt: '2026-06-11T00:01:00.000Z',
+          schemaVersion: 2,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    expect(readExecuteCheckpoint(tmpDir, cycleId)).toMatchObject({
+      cycleId,
+      phase: 'execute',
+      schemaVersion: 3,
+      completedItemIds: ['child-1'],
+      items: {
+        'child-1': {
+          itemId: 'child-1',
+          status: 'completed',
+          costUsd: 0,
+          agentId: 'unknown',
+          completedAt: '2026-06-11T00:01:00.000Z',
+        },
+      },
+    });
+
+    writeExecuteCheckpointItem(tmpDir, {
+      cycleId,
+      itemId: 'child-2',
+      status: 'completed',
+      costUsd: 2.5,
+      agentId: 'executor-runtime-engineer',
+      completedAt: '2026-06-11T00:03:00.000Z',
+    });
+
+    expect(getCompletedExecuteItems(tmpDir, cycleId)).toEqual({
+      'child-1': {
+        itemId: 'child-1',
+        status: 'completed',
+        costUsd: 0,
+        agentId: 'unknown',
+        completedAt: '2026-06-11T00:01:00.000Z',
+      },
+      'child-2': {
+        itemId: 'child-2',
+        status: 'completed',
+        costUsd: 2.5,
+        agentId: 'executor-runtime-engineer',
+        completedAt: '2026-06-11T00:03:00.000Z',
       },
     });
   });
