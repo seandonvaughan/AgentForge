@@ -88,6 +88,24 @@ const SPEND_REPORT_FIXTURE: SpendReport = {
   utilization: 0.867,
 };
 
+const V5_SPEND_REPORT_ENVELOPE = {
+  data: {
+    schemaVersion: 1,
+    cycleId: CYCLE_ID,
+    budgetUsd: 50,
+    totalUsd: 25.25,
+    executionUsd: 21.75,
+    overheadUsd: 3.5,
+    utilization: 0.861,
+    perItem: [
+      { itemId: 'item-1', title: 'Implement login endpoint', plannedUsd: 20, actualUsd: 18.5 },
+      { itemId: 'item-2', title: 'Resume completed work', plannedUsd: null, actualUsd: 3.25 },
+    ],
+    generatedAt: '2026-06-10T12:00:00.000Z',
+  },
+  meta: { cycleId: CYCLE_ID, timestamp: '2026-06-10T12:00:01.000Z' },
+};
+
 // ── getDecomposition ──────────────────────────────────────────────────────────
 
 describe('getDecomposition', () => {
@@ -198,6 +216,23 @@ describe('getSpendReport', () => {
     expect(result!.execution).toBe(34.7);
     expect(result!.overhead).toBe(5.3);
     expect(result!.utilization).toBeCloseTo(0.867);
+  });
+
+  it('normalizes the v5 envelope and core spend-report field names', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, V5_SPEND_REPORT_ENVELOPE));
+
+    const result = await getSpendReport(CYCLE_ID);
+
+    expect(result).toEqual({
+      cycleId: CYCLE_ID,
+      items: [
+        { itemId: 'item-1', title: 'Implement login endpoint', plannedUsd: 20, actualUsd: 18.5 },
+        { itemId: 'item-2', title: 'Resume completed work', plannedUsd: null, actualUsd: 3.25 },
+      ],
+      execution: 21.75,
+      overhead: 3.5,
+      utilization: 0.861,
+    });
   });
 
   it('returns null on 404', async () => {
