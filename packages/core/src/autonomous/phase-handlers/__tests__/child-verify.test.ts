@@ -26,7 +26,7 @@ import {
 /** A runner that returns ok for every command. */
 const allGreenRunner: ChildVerifyCommandRunner = async () => ({ ok: true, code: 0, output: '' });
 
-/** A runner whose result is keyed on whether the args include `related` (tests) vs not (typecheck). */
+/** A runner whose result is keyed on whether the args invoke vitest (tests) vs not (typecheck). */
 function runnerWith(opts: {
   typecheck?: ChildVerifyCommandResult;
   tests?: ChildVerifyCommandResult;
@@ -34,7 +34,9 @@ function runnerWith(opts: {
   const calls: Array<{ cmd: string; args: string[]; cwd: string }> = [];
   const runner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
     calls.push({ cmd, args, cwd });
-    if (args.includes('related')) return opts.tests ?? { ok: true, code: 0, output: '' };
+    if (args.includes('related') || args.includes('run')) {
+      return opts.tests ?? { ok: true, code: 0, output: '' };
+    }
     return opts.typecheck ?? { ok: true, code: 0, output: '' };
   };
   return { runner, calls };
@@ -70,10 +72,16 @@ describe('isCiConfigPath', () => {
 });
 
 describe('selectChildAffectedFiles', () => {
-  it('puts source files first, then force-includes changed test files, deduped', () => {
+  it('prefers changed test files when present, deduped', () => {
     expect(
       selectChildAffectedFiles(['src/a.test.ts', 'src/impl.ts', 'src/a.test.ts']),
-    ).toEqual(['src/impl.ts', 'src/a.test.ts']);
+    ).toEqual(['src/a.test.ts']);
+  });
+
+  it('falls back to source files when no test file changed', () => {
+    expect(
+      selectChildAffectedFiles(['src/impl.ts', 'src/util.ts', 'src/impl.ts']),
+    ).toEqual(['src/impl.ts', 'src/util.ts']);
   });
 });
 
@@ -137,7 +145,7 @@ describe('verifyChildWorktree — dependency startup repair', () => {
       let testAttempts = 0;
       const runner: ChildVerifyCommandRunner = async (cmd, args) => {
         calls.push({ cmd, args });
-        if (args.includes('related')) {
+        if (args.includes('related') || args.includes('run')) {
           testAttempts += 1;
           if (testAttempts === 1) {
             return {
@@ -179,7 +187,7 @@ describe('verifyChildWorktree — dependency startup repair', () => {
         if (args.includes('install')) {
           return { ok: false, code: 1, output: 'pnpm relink failed' };
         }
-        if (args.includes('related')) {
+        if (args.includes('related') || args.includes('run')) {
           testAttempts += 1;
           return {
             ok: false,
@@ -220,7 +228,7 @@ describe('verifyChildWorktree — dependency startup repair', () => {
         if (args.includes('install')) {
           return { ok: true, code: 0, output: '' };
         }
-        if (args.includes('related')) {
+        if (args.includes('related') || args.includes('run')) {
           testAttempts += 1;
           if (testAttempts === 1) {
             return {
@@ -258,7 +266,7 @@ describe('verifyChildWorktree — dependency startup repair', () => {
       let testAttempts = 0;
       const runner: ChildVerifyCommandRunner = async (cmd, args) => {
         calls.push({ cmd, args });
-        if (args.includes('related')) {
+        if (args.includes('related') || args.includes('run')) {
           testAttempts += 1;
           return { ok: false, code: 1, output: 'FAIL src/impl.test.ts\nAssertionError' };
         }
@@ -294,7 +302,7 @@ describe('verifyChildWorktree — dependency startup repair', () => {
           installAttempts += 1;
           return { ok: true, code: 0, output: '' };
         }
-        if (args.includes('related')) {
+        if (args.includes('related') || args.includes('run')) {
           testAttempts += 1;
           return {
             ok: false,
@@ -412,7 +420,7 @@ describe('verifyChildWorktree — CI-config requiresFullGates', () => {
 });
 
 describe('verifyChildWorktree — force-includes a newly-added test file (PR #258 guard)', () => {
-  it('passes the brand-new test file to the scoped vitest run', async () => {
+  it('runs the brand-new test file directly without source-file related fanout', async () => {
     const { runner, calls } = runnerWith({});
     await verifyChildWorktree({
       worktreePath: '/tmp/wt',
@@ -420,16 +428,31 @@ describe('verifyChildWorktree — force-includes a newly-added test file (PR #25
       declaredFiles: ['src/feature.ts', 'src/__tests__/brand-new.test.ts'],
       runner,
     });
-    const testCall = calls.find((c) => c.args.includes('related'));
+    const testCall = calls.find((c) => c.args.includes('run'));
     expect(testCall).toBeDefined();
     expect(testCall!.args).toContain('src/__tests__/brand-new.test.ts');
+    expect(testCall!.args).not.toContain('src/feature.ts');
+    expect(testCall!.args).not.toContain('related');
+  });
+
+  it('uses vitest related for source-only changes', async () => {
+    const { runner, calls } = runnerWith({});
+    await verifyChildWorktree({
+      worktreePath: '/tmp/wt',
+      changedFiles: ['src/feature.ts'],
+      declaredFiles: ['src/feature.ts'],
+      runner,
+    });
+    const testCall = calls.find((c) => c.args.includes('related'));
+    expect(testCall).toBeDefined();
+    expect(testCall!.args).toContain('src/feature.ts');
   });
 });
 
 describe('verifyChildWorktree — runner rejection is captured, never thrown', () => {
   it('records a typecheck failure when the runner throws', async () => {
     const throwingRunner: ChildVerifyCommandRunner = async (_cmd, args) => {
-      if (!args.includes('related')) throw new Error('spawn ENOENT');
+      if (!args.includes('related') && !args.includes('run')) throw new Error('spawn ENOENT');
       return { ok: true, code: 0, output: '' };
     };
     const result = await verifyChildWorktree({

@@ -74,13 +74,13 @@ describe('verifyChildWorktree — lockfile-detected default commands', () => {
       runner,
     });
     expect(result.ok).toBe(true);
-    // First call = typecheck, second = scoped vitest related run.
+    // First call = typecheck, second = scoped vitest run.
     expect(calls[0]).toEqual({
       cmd: 'npx',
       args: ['tsc', '--noEmit', '--pretty', 'false'],
     });
     expect(calls[1]?.cmd).toBe('npx');
-    expect(calls[1]?.args.slice(0, 3)).toEqual(['vitest', 'related', '--run']);
+    expect(calls[1]?.args.slice(0, 2)).toEqual(['vitest', 'run']);
   });
 
   it('pnpm worktree without node_modules: installs deps FIRST, then runs the toolchain', async () => {
@@ -263,18 +263,18 @@ describe('verifyChildWorktree — known-flaky test exclusion (cycle 4e451e22)', 
       runner,
       excludeTestFiles: ['packages/cli/src/__tests__/autonomous-worktree.test.ts'],
     });
-    const testCall = calls.find((c) => c.args.includes('related'));
+    const testCall = calls.find((c) => c.args.includes('run'));
     expect(testCall).toBeDefined();
     // The flaky path appears EXACTLY once — as the --exclude glob value — and
-    // is therefore not in the force-included file list that follows --run.
+    // is therefore not in the direct changed-test file list.
     const flaky = 'packages/cli/src/__tests__/autonomous-worktree.test.ts';
     const occurrences = testCall!.args.filter((a) => a === flaky);
     expect(occurrences).toHaveLength(1);
     const exIdx = testCall!.args.indexOf('--exclude');
     expect(exIdx).toBeGreaterThan(-1);
     expect(testCall!.args[exIdx + 1]).toBe(flaky);
-    // …and the real affected files still run.
-    expect(testCall!.args).toContain('src/a.ts');
+    // …and the real changed test still runs directly without source fanout.
+    expect(testCall!.args).not.toContain('src/a.ts');
     expect(testCall!.args).toContain('src/__tests__/a.test.ts');
   });
 

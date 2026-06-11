@@ -11,7 +11,9 @@
 //       touched, spec-required tests present) lived in a *prompt*, not code;
 //   (b) `vitest related` does not run a NEWLY-ADDED test whose subject was
 //       unchanged — a broken new test passed VERIFY and only failed in full CI
-//       (PR #258). The scoped child run here force-includes changed test files.
+//       (PR #258). The scoped child run here prefers changed test files when a
+//       child supplied them, and falls back to source-file related tests only
+//       when the child changed no tests.
 //
 // `verifyChildWorktree` is pure-deterministic: no LLM judgement. It runs the
 // iron-law checks in code, a scoped typecheck, and the affected tests INSIDE the
@@ -49,7 +51,7 @@ const execFileAsync = promisify(execFile);
 export interface DetectedPackageCommands {
   packageManager: 'pnpm' | 'yarn' | 'npm';
   typeCheckCommand: string;
-  /** Vitest invocation prefix; child-verify appends `related --run <files>`. */
+  /** Vitest invocation prefix; child-verify appends `run <tests>` or `related --run <sources>`. */
   testCommand: string;
   /** One-line tooling instruction for agent prompts in this repo. */
   toolingNote: string;
@@ -164,9 +166,10 @@ export interface VerifyChildWorktreeOptions {
   typeCheckCommand?: string;
   /**
    * Vitest binary invocation used for the scoped affected-test run, as a single
-   * command string (e.g. `corepack pnpm exec vitest`). The affected file list is
-   * appended as `related --run <files>`. Defaults to the worktree's detected
-   * package manager (see detectPackageCommands).
+   * command string (e.g. `corepack pnpm exec vitest`). Changed test files are
+   * appended as `run <tests>`; source-only changes are appended as
+   * `related --run <sources>`. Defaults to the worktree's detected package
+   * manager (see detectPackageCommands).
    */
   testCommand?: string;
   /**
@@ -197,7 +200,7 @@ export interface ChildVerifyResult {
    * once at the epic level.
    */
   requiresFullGates: boolean;
-  /** The affected test files the scoped run executed (deterministic, for traceability). */
+  /** The deterministic test inputs the scoped run executed. */
   affectedTests: string[];
 }
 
@@ -250,28 +253,29 @@ function isWithinDeclaredScope(changed: string, declared: string[]): boolean {
 }
 
 /**
- * Compute the affected test set for the scoped child run: the changed source
- * files drive `vitest related` resolution, and every changed test file is
- * force-included so a brand-new test ALWAYS runs (PR #258 guard). Mirrors
- * selectAffectedFiles in scripts/verify-test-planner.mjs.
+ * Compute the scoped child test inputs. If a child changed test files, those
+ * tests are the child-level acceptance target and run directly; source-file
+ * fanout is left to the cycle-level VERIFY gate. If the child changed no tests,
+ * fall back to source files so `vitest related` still catches nearby regressions.
  */
 export function selectChildAffectedFiles(changedFiles: string[]): string[] {
-  const out: string[] = [];
+  const changedTests: string[] = [];
+  const changedSources: string[] = [];
   const seen = new Set<string>();
-  const push = (file: string): void => {
+  const push = (out: string[], file: string): void => {
     const norm = normalizePath(file);
     if (norm.length === 0 || seen.has(norm)) return;
     seen.add(norm);
     out.push(norm);
   };
-  // Source files first (related resolution), then any changed test files.
   for (const f of changedFiles) {
-    if (!isTestFilePath(f)) push(f);
+    if (isTestFilePath(f)) {
+      push(changedTests, f);
+    } else {
+      push(changedSources, f);
+    }
   }
-  for (const f of changedFiles) {
-    if (isTestFilePath(f)) push(f);
-  }
-  return out;
+  return changedTests.length > 0 ? changedTests : changedSources;
 }
 
 /**
@@ -445,8 +449,9 @@ function isDependencyStartupFailure(output: string): boolean {
  *   1. iron-law checks: non-empty diff; every changed file within declared scope
  *      (warn-level when no scope declared); if requiresTests, ≥1 changed test file.
  *   2. scoped typecheck: run typeCheckCommand inside the worktree (execFile).
- *   3. affected tests: run `related --run <affected>` inside the worktree, where
- *      <affected> force-includes every changed test file. Zero failures required.
+ *   3. scoped tests: run changed test files directly, or use
+ *      `related --run <sources>` when no test files changed. Zero failures
+ *      required.
  *
  * CI-config-class changes set `requiresFullGates: true` (a `ci-config` warning is
  * also recorded) so the caller can run verify:gates once at the epic level —
@@ -608,7 +613,7 @@ export async function verifyChildWorktree(
     }
   }
 
-  // ── (3) Affected tests inside the worktree (force-includes changed tests) ─
+  // ── (3) Scoped tests inside the worktree ─────────────────────────────────
   if (affectedTests.length > 0) {
     const vt = splitCommand(testCommand);
     if (vt.cmd.length > 0) {
@@ -618,7 +623,10 @@ export async function verifyChildWorktree(
         '--exclude',
         ex.includes('/') ? ex : `**/${ex}`,
       ]);
-      const testArgs = [...vt.args, 'related', '--run', ...excludeArgs, ...affectedTests];
+      const runChangedTestsDirectly = affectedTests.every(isTestFilePath);
+      const testArgs = runChangedTestsDirectly
+        ? [...vt.args, 'run', ...excludeArgs, ...affectedTests]
+        : [...vt.args, 'related', '--run', ...excludeArgs, ...affectedTests];
       let res = await runChildVerifyCommand(runner, vt.cmd, testArgs, worktreePath);
       if (!res.ok && isDependencyStartupFailure(res.output)) {
         const repair = await repairDependenciesOnce();
