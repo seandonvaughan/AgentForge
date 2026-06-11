@@ -17,6 +17,7 @@ import { spawnSync, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { freemem, cpus } from 'node:os';
 import { join, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import process from 'node:process';
 import yaml from 'js-yaml';
@@ -31,6 +32,8 @@ import {
 
 const require = createRequire(import.meta.url);
 const ROOT = process.cwd();
+const DEFAULT_MIN_WORKERS = 2;
+const BYTES_PER_GB = 1e9;
 
 function loadAutonomousYaml() {
   try {
@@ -70,6 +73,76 @@ function resolveVitestBin() {
   return join(dirname(pkgJson), 'vitest.mjs');
 }
 
+function parsePositiveNumber(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parsePositiveInteger(value) {
+  const parsed = parsePositiveNumber(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+export function resolveAvailableMemoryGb({
+  env = process.env,
+  readMeminfo = readFileSync,
+  fallbackFreeBytes = freemem(),
+} = {}) {
+  const overrideGb = parsePositiveNumber(env.AGENTFORGE_VERIFY_AVAILABLE_GB);
+  if (overrideGb !== null) return { availableGb: overrideGb, availableSource: 'env' };
+
+  try {
+    const meminfo = readMeminfo('/proc/meminfo', 'utf8');
+    const line = meminfo
+      .split('\n')
+      .find((entry) => entry.startsWith('MemAvailable:'));
+    if (line) {
+      const [, rawKb] = line.trim().split(/\s+/);
+      const availableKb = Number.parseInt(rawKb ?? '', 10);
+      if (Number.isFinite(availableKb) && availableKb > 0) {
+        return { availableGb: (availableKb * 1024) / BYTES_PER_GB, availableSource: 'meminfo' };
+      }
+    }
+  } catch {
+    // Non-Linux hosts do not expose /proc/meminfo; fall back to node:os.
+  }
+
+  return { availableGb: fallbackFreeBytes / BYTES_PER_GB, availableSource: 'os.freemem' };
+}
+
+export function resolveMinWorkers(env = process.env) {
+  const override = parsePositiveInteger(env.AGENTFORGE_VERIFY_MIN_WORKERS);
+  return Math.max(DEFAULT_MIN_WORKERS, override ?? DEFAULT_MIN_WORKERS);
+}
+
+export function resolveWorkerSizing({
+  cfg,
+  env = process.env,
+  readMeminfo = readFileSync,
+  fallbackFreeBytes = freemem(),
+  cores = cpus().length,
+}) {
+  const memory = resolveAvailableMemoryGb({ env, readMeminfo, fallbackFreeBytes });
+  const minWorkers = resolveMinWorkers(env);
+  const plannedWorkers = computeWorkers(memory.availableGb, cores, {
+    reserveGb: cfg.reserveGb,
+    perWorkerGb: cfg.perWorkerGb,
+  });
+  return {
+    ...memory,
+    cores,
+    reserveGb: cfg.reserveGb,
+    perWorkerGb: cfg.perWorkerGb,
+    minWorkers,
+    workers: Math.max(minWorkers, plannedWorkers),
+  };
+}
+
+export function formatWorkerSizingLogFields(sizing) {
+  return `availableGb=${sizing.availableGb.toFixed(1)} availableSource=${sizing.availableSource} cores=${sizing.cores} reserveGb=${sizing.reserveGb} perWorkerGb=${sizing.perWorkerGb} minWorkers=${sizing.minWorkers}`;
+}
+
 function runVitest(args, heapCapMb) {
   const heapFlag = `--max-old-space-size=${heapCapMb}`;
   const env = { ...process.env };
@@ -99,10 +172,8 @@ function main() {
     affectedMode: cfg.affectedMode,
   });
 
-  let workers = computeWorkers(freemem() / 1e9, cpus().length, {
-    reserveGb: cfg.reserveGb,
-    perWorkerGb: cfg.perWorkerGb,
-  });
+  const sizing = resolveWorkerSizing({ cfg });
+  let workers = sizing.workers;
 
   // Forward any args appended by the caller (e.g. RealTestRunner appends
   // `-- --reporter=json --outputFile <path>` so it can parse the report). Strip
@@ -111,7 +182,7 @@ function main() {
   const passthroughArgs = process.argv.slice(2).filter((a) => a !== '--');
 
   console.error(
-    `[verify-gate] mode=${mode} workers=${workers} changedFiles=${changedFiles.length} freeGb=${(freemem() / 1e9).toFixed(1)} passthrough=${passthroughArgs.length}`,
+    `[verify-gate] mode=${mode} workers=${workers} changedFiles=${changedFiles.length} ${formatWorkerSizingLogFields(sizing)} passthrough=${passthroughArgs.length}`,
   );
 
   let { code, signal } = runVitest(
@@ -153,4 +224,6 @@ function main() {
   process.exit(exitCode);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
