@@ -60,7 +60,7 @@ describe('ItemCheckpointWriter', () => {
   it('writes checkpoint.json after first enqueue', async () => {
     await writer.enqueue(CYCLE_ID, 'item-aabbccdd', 'completed', 'coder-agent', 0.85);
     const progress = readProgress(root);
-    expect(progress.schemaVersion).toBe(2);
+    expect(progress.schemaVersion).toBe(3);
     expect(progress.phase).toBe('execute');
     expect(progress.cycleId).toBe(CYCLE_ID);
     expect(progress.completedItemIds).toContain('item-aabbccdd');
