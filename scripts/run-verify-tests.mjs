@@ -15,7 +15,7 @@
  */
 import { spawnSync, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { freemem, cpus } from 'node:os';
+import { freemem, totalmem, cpus, platform } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import process from 'node:process';
@@ -70,6 +70,107 @@ function resolveVitestBin() {
   return join(dirname(pkgJson), 'vitest.mjs');
 }
 
+function parseNonNegativeNumber(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parsePositiveInteger(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseDarwinVmStatAvailableGb(totalGb) {
+  let out;
+  try {
+    out = execFileSync('vm_stat', { encoding: 'utf8' });
+  } catch {
+    return null;
+  }
+
+  const pageSizeMatch = out.match(/page size of (\d+) bytes/i);
+  const activeMatch = out.match(/Pages active:\s+([\d.]+)/i);
+  const wiredMatch = out.match(/Pages wired down:\s+([\d.]+)/i);
+  if (!pageSizeMatch || !activeMatch || !wiredMatch) return null;
+
+  const pageSize = Number.parseInt(pageSizeMatch[1], 10);
+  const activePages = Number.parseInt(activeMatch[1].replaceAll('.', ''), 10);
+  const wiredPages = Number.parseInt(wiredMatch[1].replaceAll('.', ''), 10);
+  if (!Number.isFinite(pageSize) || !Number.isFinite(activePages) || !Number.isFinite(wiredPages)) {
+    return null;
+  }
+
+  const committedGb = ((activePages + wiredPages) * pageSize) / 1e9;
+  return Math.max(0, totalGb - committedGb);
+}
+
+function parseLinuxMemAvailableGb() {
+  let out;
+  try {
+    out = readFileSync('/proc/meminfo', 'utf8');
+  } catch {
+    return null;
+  }
+
+  const availableMatch = out.match(/^MemAvailable:\s+(\d+)\s+kB/im);
+  if (!availableMatch) return null;
+
+  const availableKb = Number.parseInt(availableMatch[1], 10);
+  return Number.isFinite(availableKb) ? (availableKb * 1024) / 1e9 : null;
+}
+
+function resolveAvailableMemoryGb({ freeGb, totalGb }) {
+  const envAvailableGb = parseNonNegativeNumber(process.env.AGENTFORGE_VERIFY_AVAILABLE_GB);
+  if (envAvailableGb !== null) {
+    return { availableGb: envAvailableGb, availableSource: 'env' };
+  }
+
+  const osPlatform = platform();
+  if (osPlatform === 'darwin') {
+    const darwinAvailableGb = parseDarwinVmStatAvailableGb(totalGb);
+    if (darwinAvailableGb !== null) {
+      return { availableGb: darwinAvailableGb, availableSource: 'darwin-vm_stat' };
+    }
+  }
+
+  if (osPlatform === 'linux') {
+    const linuxAvailableGb = parseLinuxMemAvailableGb();
+    if (linuxAvailableGb !== null) {
+      return { availableGb: linuxAvailableGb, availableSource: 'linux-meminfo' };
+    }
+  }
+
+  return { availableGb: freeGb, availableSource: 'freemem' };
+}
+
+function resolveWorkerSizing(cfg) {
+  const freeGb = freemem() / 1e9;
+  const totalGb = totalmem() / 1e9;
+  const cores = cpus().length;
+  const { availableGb, availableSource } = resolveAvailableMemoryGb({ freeGb, totalGb });
+  const minWorkers = Math.max(2, parsePositiveInteger(process.env.AGENTFORGE_VERIFY_MIN_WORKERS) ?? 2);
+  const computedWorkers = computeWorkers(availableGb, cores, {
+    reserveGb: cfg.reserveGb,
+    perWorkerGb: cfg.perWorkerGb,
+  });
+  const workers = Math.max(minWorkers, computedWorkers);
+
+  return {
+    freeGb,
+    totalGb,
+    availableGb,
+    availableSource,
+    cores,
+    reserveGb: cfg.reserveGb,
+    perWorkerGb: cfg.perWorkerGb,
+    minWorkers,
+    computedWorkers,
+    workers,
+  };
+}
+
 function runVitest(args, heapCapMb) {
   const heapFlag = `--max-old-space-size=${heapCapMb}`;
   const env = { ...process.env };
@@ -99,10 +200,8 @@ function main() {
     affectedMode: cfg.affectedMode,
   });
 
-  let workers = computeWorkers(freemem() / 1e9, cpus().length, {
-    reserveGb: cfg.reserveGb,
-    perWorkerGb: cfg.perWorkerGb,
-  });
+  const workerSizing = resolveWorkerSizing(cfg);
+  let workers = workerSizing.workers;
 
   // Forward any args appended by the caller (e.g. RealTestRunner appends
   // `-- --reporter=json --outputFile <path>` so it can parse the report). Strip
@@ -111,8 +210,9 @@ function main() {
   const passthroughArgs = process.argv.slice(2).filter((a) => a !== '--');
 
   console.error(
-    `[verify-gate] mode=${mode} workers=${workers} changedFiles=${changedFiles.length} freeGb=${(freemem() / 1e9).toFixed(1)} passthrough=${passthroughArgs.length}`,
+    `[verify-gate] mode=${mode} workers=${workers} changedFiles=${changedFiles.length} availableGb=${workerSizing.availableGb.toFixed(1)} freeGb=${workerSizing.freeGb.toFixed(1)} passthrough=${passthroughArgs.length}`,
   );
+  console.error(`[verify-gate] workerSizing ${JSON.stringify(workerSizing)}`);
 
   let { code, signal } = runVitest(
     [...buildVitestArgs({ mode, changedFiles, workers }), ...passthroughArgs],
@@ -138,6 +238,7 @@ function main() {
     changedFileCount: changedFiles.length,
     exitCode,
     signal: signal ?? null,
+    workerSizing: { ...workerSizing, workers },
   };
   console.error(`[verify-gate] summary ${JSON.stringify(summary)}`);
 
