@@ -28,10 +28,19 @@ export interface ExecuteProgress {
   cycleId: string;
   phase: 'execute';
   completedItemIds: string[];
+  completedItems?: CompletedItemMetadata[];
   currentItemId: string | null;
   totalItems: number;
   lastUpdatedAt: string;
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
+}
+
+export interface CompletedItemMetadata {
+  itemId: string;
+  agentId: string;
+  costUsd: number;
+  completedAt: string;
+  stepScore: number | null;
 }
 
 export interface ItemCheckpoint {
@@ -40,7 +49,13 @@ export interface ItemCheckpoint {
   agentId: string;
   status: 'completed' | 'failed' | 'skipped';
   stepScore: number | null;
+  costUsd: number;
   completedAt: string;
+}
+
+export interface ItemCheckpointWriteOptions {
+  stepScore?: number | null;
+  costUsd?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,10 +121,13 @@ function tryParseProgress(checkpointPath: string, cycleId: string): ExecuteProgr
     const raw = readFileSync(checkpointPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<ExecuteProgress>;
     if (
-      parsed.schemaVersion === 2 &&
+      (parsed.schemaVersion === 2 || parsed.schemaVersion === 3) &&
       parsed.cycleId === cycleId &&
       parsed.phase === 'execute' &&
-      Array.isArray(parsed.completedItemIds)
+      Array.isArray(parsed.completedItemIds) &&
+      (parsed.schemaVersion !== 3 ||
+        parsed.completedItems === undefined ||
+        Array.isArray(parsed.completedItems))
     ) {
       return parsed as ExecuteProgress;
     }
@@ -154,14 +172,24 @@ export class ItemCheckpointWriter {
     itemId: string,
     status: ItemCheckpoint['status'],
     agentId: string = 'unknown',
-    stepScore: number | null = null,
+    stepScoreOrOptions: number | null | ItemCheckpointWriteOptions = null,
+    costUsd: number = 0,
   ): Promise<void> {
+    const stepScore =
+      typeof stepScoreOrOptions === 'object' && stepScoreOrOptions !== null
+        ? stepScoreOrOptions.stepScore ?? null
+        : stepScoreOrOptions;
+    const resolvedCostUsd =
+      typeof stepScoreOrOptions === 'object' && stepScoreOrOptions !== null
+        ? stepScoreOrOptions.costUsd ?? 0
+        : costUsd;
     const record: ItemCheckpoint = {
       cycleId,
       itemId,
       agentId,
       status,
       stepScore,
+      costUsd: resolvedCostUsd,
       completedAt: new Date().toISOString(),
     };
 
@@ -196,6 +224,7 @@ export class ItemCheckpointWriter {
 
     // Read existing progress (best-effort).
     let progress: ExecuteProgress = this._readProgress(cycleId, checkpointPath);
+    progress = this._toCurrentProgress(progress);
 
     // Append item to completedItemIds (deduplicate) — but ONLY items that
     // actually completed. Failed/skipped items must stay resumable: recording
@@ -206,6 +235,16 @@ export class ItemCheckpointWriter {
       progress = {
         ...progress,
         completedItemIds: [...progress.completedItemIds, record.itemId],
+        completedItems: [
+          ...(progress.completedItems ?? []),
+          {
+            itemId: record.itemId,
+            agentId: record.agentId,
+            costUsd: record.costUsd,
+            completedAt: record.completedAt,
+            stepScore: record.stepScore,
+          },
+        ],
         currentItemId: null,
         lastUpdatedAt: record.completedAt,
       };
@@ -229,7 +268,22 @@ export class ItemCheckpointWriter {
       currentItemId: null,
       totalItems: this.totalItems,
       lastUpdatedAt: new Date().toISOString(),
-      schemaVersion: 2,
+      schemaVersion: 3,
+      completedItems: [],
+    };
+  }
+
+  private _toCurrentProgress(progress: ExecuteProgress): ExecuteProgress {
+    if (progress.schemaVersion === 3) {
+      return {
+        ...progress,
+        completedItems: progress.completedItems ?? [],
+      };
+    }
+    return {
+      ...progress,
+      schemaVersion: 3,
+      completedItems: [],
     };
   }
 
@@ -264,5 +318,19 @@ export class ItemCheckpointWriter {
     const progress = ItemCheckpointWriter.readProgress(projectRoot, cycleId);
     if (!progress) return new Set();
     return new Set(progress.completedItemIds);
+  }
+
+  /**
+   * Returns per-completed-item metadata for schemaVersion 3 checkpoints.
+   * Older schemaVersion 2 checkpoints intentionally return an empty map: their
+   * completedItemIds still form the resume skip set, but they carried no costs.
+   */
+  static getCompletedItemMetadata(
+    projectRoot: string,
+    cycleId: string,
+  ): Map<string, CompletedItemMetadata> {
+    const progress = ItemCheckpointWriter.readProgress(projectRoot, cycleId);
+    if (!progress || progress.schemaVersion !== 3 || !progress.completedItems) return new Map();
+    return new Map(progress.completedItems.map((item) => [item.itemId, item]));
   }
 }
