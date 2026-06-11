@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import {
   readEpicIntegrationFromDisk,
   assertObjectiveReleaseIntegration,
+  resolveStageVerifyCwd,
   tryLoadExistingPlanForResume,
 } from '../cycle-runner.js';
 import type { EpicIntegrationResult } from '../phase-scheduler.js';
@@ -121,6 +122,29 @@ describe('assertObjectiveReleaseIntegration — no legacy main-tree release on o
 
   it('does not throw for signal cycles (objective undefined), preserving the legacy path', () => {
     expect(() => assertObjectiveReleaseIntegration(undefined, null)).not.toThrow();
+  });
+});
+
+describe('resolveStageVerifyCwd — objective verify runs in the integration worktree', () => {
+  const integration: EpicIntegrationResult = {
+    branch: 'codex/epic-abc12345',
+    epicId: 'epic-abc12345',
+    mergedBranches: [],
+    hadConflicts: false,
+  };
+
+  it('uses the deterministic integration worktree for objective cycles', () => {
+    expect(resolveStageVerifyCwd(projectRoot, 'build the operator console', integration)).toBe(
+      join(projectRoot, '.agentforge', 'worktrees', 'int-codex-epic-abc12345'),
+    );
+  });
+
+  it('keeps legacy signal cycles on the operator project root', () => {
+    expect(resolveStageVerifyCwd(projectRoot, undefined, integration)).toBe(projectRoot);
+  });
+
+  it('falls back to the operator project root when no integration signal exists yet', () => {
+    expect(resolveStageVerifyCwd(projectRoot, 'build the operator console', null)).toBe(projectRoot);
   });
 });
 

@@ -80,6 +80,7 @@ import {
 import {
   pushIntegrationBranch,
   removeIntegrationWorktree,
+  integrationWorktreePathFor,
 } from './phase-handlers/wave-integration.js';
 import { KillSwitch } from './kill-switch.js';
 import { CycleLogger } from './cycle-logger.js';
@@ -577,6 +578,15 @@ export function assertObjectiveReleaseIntegration(
   throw new Error(
     'objective cycle has no integration branch — refusing the legacy main-tree release; inspect phases/execute.json',
   );
+}
+
+export function resolveStageVerifyCwd(
+  projectRoot: string,
+  objective: string | undefined,
+  epicIntegration: EpicIntegrationResult | null,
+): string {
+  if (objective === undefined || epicIntegration === null) return projectRoot;
+  return integrationWorktreePathFor(projectRoot, epicIntegration.branch);
 }
 
 /**
@@ -1868,6 +1878,7 @@ export class CycleRunner {
     // Run the project's real test command, derive a TestResult, then check
     // the kill switch's post-verify gate (test floor + regression policy).
     // ─────────────────────────────────────────────────────────────────
+    const verifyCwd = this.resolveStageVerifyCwd();
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
       status: 'running',
@@ -1878,8 +1889,9 @@ export class CycleRunner {
       cycleId: this.cycleId,
       step: 'tests-started',
       detail: this.options.config.testing.command,
+      verifyCwd,
     });
-    const testResult = await this.options.testRunner.run(this.cycleId);
+    const testResult = await this.options.testRunner.run(this.cycleId, { cwd: verifyCwd });
     this.logger.logTestRun(testResult);
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
@@ -1902,6 +1914,7 @@ export class CycleRunner {
       failed: testResult.failed,
       total: testResult.total,
       passRate: testResult.passRate,
+      verifyCwd,
     });
     this.testStats = {
       passed: testResult.passed,
@@ -1936,6 +1949,7 @@ export class CycleRunner {
       this.options.bus.publish('sprint.phase.verify.step', {
         cycleId: this.cycleId,
         step: 'branch-verify-started',
+        verifyCwd,
       });
     }
     if (!branchVerificationCompletedInRetryLoop) {
@@ -2386,9 +2400,10 @@ export class CycleRunner {
   private async runPreVerifyTypeCheck(): Promise<void> {
     // eslint-disable-next-line no-console
     console.log('[autonomous:cycle] stage 3.5: running pre-verify typecheck');
+    const verifyCwd = this.resolveStageVerifyCwd();
     const result = this.options.preVerifyTypeCheck
-      ? await this.options.preVerifyTypeCheck(this.options.cwd, this.options.config.testing)
-      : await runPreVerifyTypeCheck(this.options.cwd, this.options.config.testing, this.logger);
+      ? await this.options.preVerifyTypeCheck(verifyCwd, this.options.config.testing)
+      : await runPreVerifyTypeCheck(verifyCwd, this.options.config.testing, this.logger);
 
     if (!result.buildOk) {
       // eslint-disable-next-line no-console
@@ -2415,6 +2430,7 @@ export class CycleRunner {
 
   private async verifyMultiPrBranches(): Promise<void> {
     if (this.options.config.prMode !== 'multi') return;
+    const verifyCwd = this.resolveStageVerifyCwd();
 
     // eslint-disable-next-line no-console
     console.log('[autonomous:cycle] multi-pr: verifying agent branches');
@@ -2459,6 +2475,7 @@ export class CycleRunner {
       passed: result.passed,
       branches: result.results.length,
       skipped: result.skipped === true,
+      verifyCwd,
     });
 
     if (result.passed) return;
@@ -2485,6 +2502,10 @@ export class CycleRunner {
     } catch {
       return undefined;
     }
+  }
+
+  private resolveStageVerifyCwd(): string {
+    return resolveStageVerifyCwd(this.options.cwd, this.options.objective, this.epicIntegration);
   }
 
   /**

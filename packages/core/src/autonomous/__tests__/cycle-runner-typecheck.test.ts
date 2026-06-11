@@ -11,8 +11,13 @@
 // methods are the authoritative decision points, so testing them directly gives
 // tight coverage without spinning up a full cycle mock.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { KillSwitch } from '../kill-switch.js';
+import { RealTestRunner } from '../exec/real-test-runner.js';
+import { CycleLogger } from '../cycle-logger.js';
 import { CycleStage } from '../types.js';
 import type { CycleConfig } from '../types.js';
 
@@ -68,12 +73,41 @@ function makeConfig(qualityOverrides: Partial<CycleConfig['quality']> = {}): Cyc
 }
 
 /** Stub signal handlers so multiple KillSwitch instances don't stack listeners. */
+const tempDirs: string[] = [];
+
 beforeEach(() => {
   vi.spyOn(KillSwitch.prototype, 'installSignalHandlers').mockReturnValue(undefined);
 });
 
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function makeKillSwitch(qualityOverrides?: Partial<CycleConfig['quality']>): KillSwitch {
   return new KillSwitch(makeConfig(qualityOverrides), 'test-cycle-id', Date.now(), '/tmp');
+}
+
+function makeTempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function writeVitestJsonCommandScript(projectRoot: string): string {
+  const scriptPath = join(projectRoot, 'write-vitest-json.cjs');
+  writeFileSync(
+    scriptPath,
+    [
+      "const fs=require('node:fs');",
+      "const path=require('node:path');",
+      "const outputFile=process.argv[process.argv.indexOf('--outputFile')+1];",
+      "fs.mkdirSync(path.dirname(outputFile),{recursive:true});",
+      'fs.writeFileSync(outputFile,JSON.stringify({numPassedTests:2,numFailedTests:0,numPendingTests:0,testResults:[]}));',
+    ].join('\n'),
+  );
+  return scriptPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +147,61 @@ describe('KillSwitch.checkBuildResult', () => {
     // A later "success" call still returns the same tripped state.
     const second = ks.checkBuildResult({ success: true });
     expect(second).toBe(first);
+  });
+});
+
+describe('RealTestRunner verify cwd', () => {
+  it('runs in the explicit verify cwd and records it on the result', async () => {
+    const projectRoot = makeTempDir('real-test-runner-root-');
+    const verifyCwd = join(projectRoot, 'integration-worktree');
+    mkdirSync(verifyCwd, { recursive: true });
+    const scriptPath = writeVitestJsonCommandScript(projectRoot);
+    const runner = new RealTestRunner(
+      projectRoot,
+      {
+        ...makeConfig().testing,
+        command: `node "${scriptPath}"`,
+      },
+      null,
+    );
+
+    const result = await runner.run('cycle-verify-cwd', { cwd: verifyCwd });
+
+    const verifyOutput = join(verifyCwd, '.agentforge', 'cycles', 'cycle-verify-cwd', 'test-results.json');
+    const legacyOutput = join(projectRoot, '.agentforge', 'cycles', 'cycle-verify-cwd', 'test-results.json');
+    expect(result.verifyCwd).toBe(verifyCwd);
+    expect(result.passed).toBe(2);
+    expect(result.rawOutputPath).toBe(
+      join(verifyCwd, '.agentforge', 'cycles', 'cycle-verify-cwd', 'tests-raw.log'),
+    );
+    expect(existsSync(verifyOutput)).toBe(true);
+    expect(existsSync(legacyOutput)).toBe(false);
+
+    new CycleLogger(projectRoot, 'cycle-verify-cwd').logTestRun(result);
+    const testsJson = JSON.parse(
+      readFileSync(join(projectRoot, '.agentforge', 'cycles', 'cycle-verify-cwd', 'tests.json'), 'utf8'),
+    );
+    expect(testsJson.verifyCwd).toBe(verifyCwd);
+  });
+
+  it('defaults to the constructor cwd for legacy cycles', async () => {
+    const projectRoot = makeTempDir('real-test-runner-legacy-');
+    const scriptPath = writeVitestJsonCommandScript(projectRoot);
+    const runner = new RealTestRunner(
+      projectRoot,
+      {
+        ...makeConfig().testing,
+        command: `node "${scriptPath}"`,
+      },
+      null,
+    );
+
+    const result = await runner.run('cycle-legacy-cwd');
+    const output = join(projectRoot, '.agentforge', 'cycles', 'cycle-legacy-cwd', 'test-results.json');
+
+    expect(result.verifyCwd).toBe(projectRoot);
+    expect(existsSync(output)).toBe(true);
+    expect(JSON.parse(readFileSync(output, 'utf8'))).toMatchObject({ numPassedTests: 2 });
   });
 });
 
