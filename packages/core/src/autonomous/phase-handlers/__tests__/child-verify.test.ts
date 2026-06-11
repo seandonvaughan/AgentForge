@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   verifyChildWorktree,
+  provisionWorktreeDependencies,
   createSerialChildVerifyCommandRunner,
   resolveChildVerifyCommandForExecFile,
   isTestFilePath,
@@ -45,6 +46,12 @@ function makePnpmRepairWorktree(): string {
   writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
   mkdirSync(join(dir, 'node_modules'), { recursive: true });
   writeFileSync(join(dir, 'node_modules', '.modules.yaml'), 'installed\n');
+  return dir;
+}
+
+function makePnpmWorktree(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'child-verify-deps-'));
+  writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
   return dir;
 }
 
@@ -327,6 +334,76 @@ describe('verifyChildWorktree — dependency startup repair', () => {
       expect(typecheckAttempts).toBe(2);
       expect(testAttempts).toBe(1);
       expect(result.failures.filter((failure) => failure.check === 'tests')).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('provisionWorktreeDependencies', () => {
+  it('returns attempted=false when dependency markers already exist', async () => {
+    const dir = makePnpmRepairWorktree();
+    try {
+      const runner = vi.fn(allGreenRunner);
+      const result = await provisionWorktreeDependencies({ worktreePath: dir, runner });
+
+      expect(result).toEqual({ attempted: false, succeeded: true });
+      expect(runner).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns structured success details when it installs dependencies', async () => {
+    const dir = makePnpmWorktree();
+    try {
+      const result = await provisionWorktreeDependencies({
+        worktreePath: dir,
+        runner: allGreenRunner,
+      });
+
+      expect(result).toEqual({
+        attempted: true,
+        succeeded: true,
+        command: {
+          cmd: 'corepack',
+          args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+        },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns structured error details when dependency installation fails', async () => {
+    const dir = makePnpmWorktree();
+    try {
+      const result = await provisionWorktreeDependencies({
+        worktreePath: dir,
+        runner: async () => ({
+          ok: false,
+          code: 1,
+          signal: null,
+          output: 'install failed',
+        }),
+      });
+
+      expect(result.attempted).toBe(true);
+      expect(result.succeeded).toBe(false);
+      if (!result.attempted || result.succeeded) {
+        throw new Error('expected failed provisioning result');
+      }
+      expect(result.command).toEqual({
+        cmd: 'corepack',
+        args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+      });
+      expect(result.error).toMatchObject({
+        code: 1,
+        message:
+          'Worktree dependency install failed (exit 1): corepack pnpm install --frozen-lockfile --prefer-offline',
+        outputTail: 'install failed',
+        signal: null,
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
