@@ -28,10 +28,17 @@ export interface ExecuteProgress {
   cycleId: string;
   phase: 'execute';
   completedItemIds: string[];
+  completedItems: CompletedItemCheckpoint[];
   currentItemId: string | null;
   totalItems: number;
   lastUpdatedAt: string;
-  schemaVersion: 2;
+  schemaVersion: 3;
+}
+
+export interface CompletedItemCheckpoint {
+  itemId: string;
+  costUsd: number;
+  agentId: string;
 }
 
 export interface ItemCheckpoint {
@@ -40,7 +47,19 @@ export interface ItemCheckpoint {
   agentId: string;
   status: 'completed' | 'failed' | 'skipped';
   stepScore: number | null;
+  costUsd: number;
   completedAt: string;
+}
+
+interface RawExecuteProgress {
+  schemaVersion?: number;
+  cycleId?: unknown;
+  phase?: unknown;
+  completedItemIds?: unknown;
+  completedItems?: unknown;
+  currentItemId?: unknown;
+  totalItems?: unknown;
+  lastUpdatedAt?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +92,11 @@ function resolveLegacyCheckpointPath(projectRoot: string, cycleId: string): stri
   return join(projectRoot, '.agentforge', 'cycles', safeId, 'checkpoint.json');
 }
 
+function resolveExecutePhasePath(projectRoot: string, cycleId: string): string {
+  const safeId = safeSegment(cycleId, 'cycleId');
+  return join(projectRoot, '.agentforge', 'cycles', safeId, 'phases', 'execute.json');
+}
+
 // ---------------------------------------------------------------------------
 // Atomic write helper
 // ---------------------------------------------------------------------------
@@ -101,17 +125,64 @@ function atomicWrite(finalPath: string, content: string): void {
  * Returns the parsed progress if valid, or null if the file doesn't exist,
  * is malformed, or doesn't match the expected schema.
  */
+function isCompletedItemCheckpoint(value: unknown): value is CompletedItemCheckpoint {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Partial<CompletedItemCheckpoint>;
+  return (
+    typeof record.itemId === 'string' &&
+    typeof record.costUsd === 'number' &&
+    Number.isFinite(record.costUsd) &&
+    typeof record.agentId === 'string'
+  );
+}
+
+function tryReadItemCostUsd(projectRoot: string, cycleId: string, itemId: string): number | null {
+  try {
+    const raw = readFileSync(resolveExecutePhasePath(projectRoot, cycleId), 'utf8');
+    const parsed = JSON.parse(raw) as { itemResults?: unknown };
+    const itemResults = Array.isArray(parsed.itemResults) ? parsed.itemResults : [];
+    for (const itemResult of itemResults) {
+      if (!itemResult || typeof itemResult !== 'object') continue;
+      const record = itemResult as { itemId?: unknown; costUsd?: unknown };
+      if (
+        record.itemId === itemId &&
+        typeof record.costUsd === 'number' &&
+        Number.isFinite(record.costUsd)
+      ) {
+        return record.costUsd;
+      }
+    }
+  } catch {
+    // Missing or malformed execute.json is non-fatal for checkpoint writes.
+  }
+  return null;
+}
+
 function tryParseProgress(checkpointPath: string, cycleId: string): ExecuteProgress | null {
   try {
     const raw = readFileSync(checkpointPath, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<ExecuteProgress>;
+    const parsed = JSON.parse(raw) as RawExecuteProgress;
     if (
-      parsed.schemaVersion === 2 &&
+      (parsed.schemaVersion === 2 || parsed.schemaVersion === 3) &&
       parsed.cycleId === cycleId &&
       parsed.phase === 'execute' &&
       Array.isArray(parsed.completedItemIds)
     ) {
-      return parsed as ExecuteProgress;
+      const completedItems = Array.isArray(parsed.completedItems)
+        ? parsed.completedItems.filter(isCompletedItemCheckpoint)
+        : [];
+      return {
+        cycleId,
+        phase: 'execute',
+        completedItemIds: parsed.completedItemIds.filter((id): id is string => typeof id === 'string'),
+        completedItems,
+        currentItemId: typeof parsed.currentItemId === 'string' ? parsed.currentItemId : null,
+        totalItems: typeof parsed.totalItems === 'number' ? parsed.totalItems : 0,
+        lastUpdatedAt: typeof parsed.lastUpdatedAt === 'string'
+          ? parsed.lastUpdatedAt
+          : new Date().toISOString(),
+        schemaVersion: 3,
+      };
     }
   } catch {
     // ENOENT or malformed — fall through.
@@ -131,7 +202,7 @@ function tryParseProgress(checkpointPath: string, cycleId: string): ExecuteProgr
  * the same checkpoint.json file.
  *
  * Public surface:
- *   enqueue(cycleId, itemId, status, agentId?, stepScore?) - Promise<void>
+ *   enqueue(cycleId, itemId, status, agentId?, stepScore?, costUsd?) - Promise<void>
  *   flush()                                                 - Promise<void>
  */
 export class ItemCheckpointWriter {
@@ -155,6 +226,7 @@ export class ItemCheckpointWriter {
     status: ItemCheckpoint['status'],
     agentId: string = 'unknown',
     stepScore: number | null = null,
+    costUsd: number | null = null,
   ): Promise<void> {
     const record: ItemCheckpoint = {
       cycleId,
@@ -162,6 +234,7 @@ export class ItemCheckpointWriter {
       agentId,
       status,
       stepScore,
+      costUsd: costUsd ?? tryReadItemCostUsd(this.projectRoot, cycleId, itemId) ?? 0,
       completedAt: new Date().toISOString(),
     };
 
@@ -206,6 +279,10 @@ export class ItemCheckpointWriter {
       progress = {
         ...progress,
         completedItemIds: [...progress.completedItemIds, record.itemId],
+        completedItems: [
+          ...progress.completedItems,
+          { itemId: record.itemId, costUsd: record.costUsd, agentId: record.agentId },
+        ],
         currentItemId: null,
         lastUpdatedAt: record.completedAt,
       };
@@ -226,10 +303,11 @@ export class ItemCheckpointWriter {
       cycleId,
       phase: 'execute',
       completedItemIds: [],
+      completedItems: [],
       currentItemId: null,
       totalItems: this.totalItems,
       lastUpdatedAt: new Date().toISOString(),
-      schemaVersion: 2,
+      schemaVersion: 3,
     };
   }
 
