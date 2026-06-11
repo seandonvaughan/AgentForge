@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   verifyChildWorktree,
+  provisionWorktreeDependencies,
   createSerialChildVerifyCommandRunner,
   resolveChildVerifyCommandForExecFile,
   isTestFilePath,
@@ -74,6 +75,91 @@ describe('selectChildAffectedFiles', () => {
     expect(
       selectChildAffectedFiles(['src/a.test.ts', 'src/impl.ts', 'src/a.test.ts']),
     ).toEqual(['src/impl.ts', 'src/a.test.ts']);
+  });
+});
+
+describe('provisionWorktreeDependencies', () => {
+  it('selects the install command from the worktree lockfile', async () => {
+    const cases = [
+      {
+        lockfile: 'pnpm-lock.yaml',
+        contents: 'lockfileVersion: 9\n',
+        expected: {
+          cmd: 'corepack',
+          args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+        },
+      },
+      {
+        lockfile: 'yarn.lock',
+        contents: '# yarn lockfile v1\n',
+        expected: {
+          cmd: 'yarn',
+          args: ['install', '--frozen-lockfile'],
+        },
+      },
+      {
+        lockfile: 'package-lock.json',
+        contents: '{}\n',
+        expected: {
+          cmd: 'npm',
+          args: ['ci'],
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const dir = mkdtempSync(join(tmpdir(), 'child-verify-provision-'));
+      try {
+        writeFileSync(join(dir, testCase.lockfile), testCase.contents);
+        const calls: Array<{ cmd: string; args: string[]; cwd: string }> = [];
+        const runner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
+          calls.push({ cmd, args, cwd });
+          return { ok: true, code: 0, output: '' };
+        };
+
+        const failure = await provisionWorktreeDependencies({ worktreePath: dir, runner });
+
+        expect(failure).toBeNull();
+        expect(calls).toEqual([{ ...testCase.expected, cwd: dir }]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('skips npm provisioning when the worktree has no package-lock.json', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-provision-'));
+    try {
+      const runner = vi.fn(allGreenRunner);
+
+      const failure = await provisionWorktreeDependencies({ worktreePath: dir, runner });
+
+      expect(failure).toBeNull();
+      expect(runner).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a structured deps failure when the install command fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-provision-'));
+    try {
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      const runner: ChildVerifyCommandRunner = async () => ({
+        ok: false,
+        code: 1,
+        output: 'ERR_PNPM_NO_OFFLINE store miss',
+      });
+
+      const failure = await provisionWorktreeDependencies({ worktreePath: dir, runner });
+
+      expect(failure?.check).toBe('deps');
+      expect(failure?.severity).toBe('failure');
+      expect(failure?.message).toContain('corepack pnpm install --frozen-lockfile --prefer-offline');
+      expect(failure?.outputTail).toContain('ERR_PNPM_NO_OFFLINE');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
