@@ -14,6 +14,7 @@ const FIXTURE_PATH = resolve(
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const { EventEmitter } = await import('node:events');
   const findOutputFile = (args: string[]): string | null => {
     const directIdx = args.findIndex((a) => a === '--outputFile');
     if (directIdx >= 0) return args[directIdx + 1] ?? null;
@@ -33,6 +34,16 @@ vi.mock('node:child_process', async () => {
         writeFileSync(outputFile, fixture);
       }
       cb(null, { stdout: 'mock stdout', stderr: '' });
+    }),
+    spawn: vi.fn(() => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
     }),
   };
 });
@@ -67,6 +78,33 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
     const result = await runner.run(cycleId);
     expect(result.rawOutputPath).toContain(cycleId);
     expect(result.rawOutputPath).toMatch(/\.log$/);
+  });
+
+  it('returns verifyCwd and runs execFile from that cwd', async () => {
+    const { execFile } = await import('node:child_process');
+    const verifyDir = join(tmpDir, 'verify-worktree');
+    mkdirSync(verifyDir, { recursive: true });
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+    const result = await runner.run(cycleId, verifyDir);
+
+    const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const [, , opts] = calls.at(-1)!;
+    expect((opts as { cwd: string }).cwd).toBe(verifyDir);
+    expect(result.rawOutputPath).toContain(verifyDir);
+    expect(result.verifyCwd).toBe(verifyDir);
+  });
+
+  it('runs progress spawn from the same verify cwd', async () => {
+    const { spawn } = await import('node:child_process');
+    const verifyDir = join(tmpDir, 'verify-worktree');
+    mkdirSync(verifyDir, { recursive: true });
+    const bus = { publish: vi.fn() };
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null, bus);
+    await runner.run(cycleId, verifyDir);
+
+    const calls = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const [, , opts] = calls.at(-1)!;
+    expect((opts as { cwd: string }).cwd).toBe(verifyDir);
   });
 
   it('computes newFailures against a prior snapshot', async () => {
