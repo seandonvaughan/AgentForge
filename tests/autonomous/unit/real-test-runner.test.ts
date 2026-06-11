@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,8 @@ const FIXTURE_PATH = resolve(
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const { EventEmitter } = await import('node:events');
+  const { PassThrough } = await import('node:stream');
   const findOutputFile = (args: string[]): string | null => {
     const directIdx = args.findIndex((a) => a === '--outputFile');
     if (directIdx >= 0) return args[directIdx + 1] ?? null;
@@ -34,6 +36,15 @@ vi.mock('node:child_process', async () => {
       }
       cb(null, { stdout: 'mock stdout', stderr: '' });
     }),
+    spawn: vi.fn(() => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: InstanceType<typeof PassThrough>;
+        stderr: InstanceType<typeof PassThrough>;
+      };
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      return child;
+    }),
   };
 });
 
@@ -42,6 +53,7 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
   const cycleId = 'test-rtr-cycle';
 
   beforeEach(() => {
+    vi.clearAllMocks();
     tmpDir = mkdtempSync(join(tmpdir(), 'agentforge-rtr-'));
     mkdirSync(join(tmpDir, '.agentforge/cycles', cycleId), { recursive: true });
   });
@@ -60,6 +72,53 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
     expect(result.passRate).toBeCloseTo(0.667, 2);
     expect(result.failedTests).toHaveLength(1);
     expect(result.failedTests[0]!.name).toBe('fails deliberately');
+  });
+
+  it('uses an explicit run cwd for execFile output files and returned verifyCwd', async () => {
+    const { execFile } = await import('node:child_process');
+    const explicitCwd = mkdtempSync(join(tmpdir(), 'agentforge-rtr-explicit-'));
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+
+    try {
+      const result = await runner.run(cycleId, explicitCwd);
+
+      const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const [, , opts] = calls.at(-1)!;
+      expect((opts as { cwd: string }).cwd).toBe(explicitCwd);
+      expect(result.verifyCwd).toBe(explicitCwd);
+      expect(result.rawOutputPath).toBe(join(explicitCwd, '.agentforge/cycles', cycleId, 'tests-raw.log'));
+      expect(existsSync(join(explicitCwd, '.agentforge/cycles', cycleId, 'test-results.json'))).toBe(true);
+      expect(existsSync(join(explicitCwd, '.agentforge/cycles', cycleId, 'tests-raw.log'))).toBe(true);
+    } finally {
+      rmSync(explicitCwd, { recursive: true, force: true });
+    }
+  });
+
+  it('uses an explicit run cwd for spawned progress streaming', async () => {
+    const { spawn } = await import('node:child_process');
+    const explicitCwd = mkdtempSync(join(tmpdir(), 'agentforge-rtr-spawn-'));
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null, {
+      publish: vi.fn(),
+    });
+
+    try {
+      (
+        runner as unknown as {
+          _streamProgressLines: (
+            file: string,
+            args: string[],
+            timeoutMs: number,
+            cwd: string,
+          ) => void;
+        }
+      )._streamProgressLines('vitest', ['run'], 1000, explicitCwd);
+
+      const calls = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const [, , opts] = calls.at(-1)!;
+      expect((opts as { cwd: string }).cwd).toBe(explicitCwd);
+    } finally {
+      rmSync(explicitCwd, { recursive: true, force: true });
+    }
   });
 
   it('returns rawOutputPath pointing to saved log', async () => {

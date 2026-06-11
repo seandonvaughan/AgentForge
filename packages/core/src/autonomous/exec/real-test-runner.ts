@@ -82,8 +82,8 @@ export class RealTestRunner {
     private readonly bus?: TestProgressBus,
   ) {}
 
-  async run(cycleId: string): Promise<TestResult> {
-    const outputFile = join(this.cwd, '.agentforge/cycles', cycleId, 'test-results.json');
+  async run(cycleId: string, cwd = this.cwd): Promise<TestResult> {
+    const outputFile = join(cwd, '.agentforge/cycles', cycleId, 'test-results.json');
     mkdirSync(dirname(outputFile), { recursive: true });
 
     const cmdParts = parseCommandArgs(this.config.command);
@@ -116,13 +116,14 @@ export class RealTestRunner {
         invocation.command,
         invocation.args,
         timeoutMs,
+        cwd,
         invocation.windowsVerbatimArguments,
       );
     }
 
     try {
       const result = await execFileAsync(invocation.command, invocation.args, {
-        cwd: this.cwd,
+        cwd,
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
         env: buildTestSubprocessEnv(),
@@ -151,7 +152,7 @@ export class RealTestRunner {
       // because tests failed" — fall through to JSON parsing below.
     }
 
-    const rawLogPath = join(this.cwd, '.agentforge/cycles', cycleId, 'tests-raw.log');
+    const rawLogPath = join(cwd, '.agentforge/cycles', cycleId, 'tests-raw.log');
     if (this.config.saveRawLog) {
       writeFileSync(rawLogPath, stdout + '\n--- STDERR ---\n' + stderr);
     }
@@ -163,7 +164,7 @@ export class RealTestRunner {
     }
 
     const raw = JSON.parse(readFileSync(outputFile, 'utf8'));
-    return this.parseVitestJson(raw, rawLogPath, startedAt, exitCode);
+    return this.parseVitestJson(raw, rawLogPath, startedAt, exitCode, cwd);
   }
 
   /**
@@ -178,6 +179,7 @@ export class RealTestRunner {
     file: string,
     args: string[],
     timeoutMs: number,
+    cwd: string,
     windowsVerbatimArguments?: boolean,
   ): void {
     if (!this.bus) return;
@@ -189,7 +191,7 @@ export class RealTestRunner {
 
     try {
       const child = spawn(file, args, {
-        cwd: this.cwd,
+        cwd,
         env: buildTestSubprocessEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: timeoutMs,
@@ -267,6 +269,7 @@ export class RealTestRunner {
     rawLogPath: string,
     startedAt: number,
     exitCode: number,
+    verifyCwd: string,
   ): TestResult {
     const passed = raw.numPassedTests ?? 0;
     const failed = raw.numFailedTests ?? 0;
@@ -312,6 +315,7 @@ export class RealTestRunner {
       durationMs: Date.now() - startedAt,
       failedTests,
       newFailures,
+      verifyCwd,
       rawOutputPath: rawLogPath,
       exitCode,
     };
