@@ -201,6 +201,28 @@ export interface ChildVerifyResult {
   affectedTests: string[];
 }
 
+export interface WorktreeDependencyProvisionCommand {
+  cmd: string;
+  args: string[];
+}
+
+export interface WorktreeDependencyProvisionError {
+  code: number | null;
+  message: string;
+  outputTail: string;
+  signal?: string | null;
+}
+
+export type WorktreeDependencyProvisionResult =
+  | { attempted: false; succeeded: true }
+  | { attempted: true; succeeded: true; command: WorktreeDependencyProvisionCommand }
+  | {
+      attempted: true;
+      succeeded: false;
+      command: WorktreeDependencyProvisionCommand;
+      error: WorktreeDependencyProvisionError;
+    };
+
 /** Normalize a path for matching: backslashes → slashes, strip a leading `./`. */
 function normalizePath(file: string): string {
   return file.split('\\').join('/').replace(/^\.\//, '').trim();
@@ -287,6 +309,47 @@ export function selectChildAffectedFiles(changedFiles: string[]): string[] {
  * surfaced as a structured `deps` failure rather than a misleading
  * typecheck/tests failure.
  */
+export async function provisionWorktreeDependencies(opts: {
+  worktreePath: string;
+  detected?: DetectedPackageCommands;
+  runner?: ChildVerifyCommandRunner;
+  force?: boolean;
+}): Promise<WorktreeDependencyProvisionResult> {
+  const {
+    worktreePath,
+    detected = detectPackageCommands(opts.worktreePath),
+    runner = realCommandRunner,
+    force = false,
+  } = opts;
+  const installed = (marker: string): boolean =>
+    existsSync(join(worktreePath, 'node_modules', marker));
+  const command = dependencyInstallCommand(worktreePath, detected, installed, force);
+  if (!command) return { attempted: false, succeeded: true };
+
+  const res = await runDependencyInstall(worktreePath, command, runner);
+  if (res.ok) {
+    return {
+      attempted: true,
+      succeeded: true,
+      command,
+    };
+  }
+
+  return {
+    attempted: true,
+    succeeded: false,
+    command,
+    error: {
+      code: res.code,
+      message:
+        `Worktree dependency install failed (${formatCommandExit(res)}): ` +
+        `${command.cmd} ${command.args.join(' ')}`,
+      outputTail: tail(res.output),
+      ...(res.signal !== undefined ? { signal: res.signal } : {}),
+    },
+  };
+}
+
 async function ensureWorktreeDependencies(
   worktreePath: string,
   detected: DetectedPackageCommands,
@@ -300,19 +363,13 @@ async function ensureWorktreeDependencies(
   // COMPLETION: pnpm → node_modules/.modules.yaml, npm → node_modules/
   // .package-lock.json. No marker → (re-)install; installs are idempotent and
   // near-instant on a warm store when the tree is actually complete.
-  const installed = (marker: string): boolean =>
-    existsSync(join(worktreePath, 'node_modules', marker));
-  const install = dependencyInstallCommand(worktreePath, detected, installed);
-  if (!install) return null;
-  const res = await runDependencyInstall(worktreePath, install, runner);
-  if (res.ok) return null;
+  const provision = await provisionWorktreeDependencies({ worktreePath, detected, runner });
+  if (!provision.attempted || provision.succeeded) return null;
   return {
     check: 'deps',
     severity: 'failure',
-    message:
-      `Worktree dependency install failed (${formatCommandExit(res)}): ` +
-      `${install.cmd} ${install.args.join(' ')}`,
-    outputTail: tail(res.output),
+    message: provision.error.message,
+    outputTail: provision.error.outputTail,
   };
 }
 
