@@ -360,6 +360,14 @@ const rawRealCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) =>
 
 const realCommandRunner = createSerialChildVerifyCommandRunner(rawRealCommandRunner);
 
+export function provisionWorktreeDependencies(
+  worktreePath: string,
+  detected: DetectedPackageCommands = detectPackageCommands(worktreePath),
+  runner: ChildVerifyCommandRunner = realCommandRunner,
+): Promise<ChildVerifyFailure | null> {
+  return ensureWorktreeDependencies(worktreePath, detected, runner);
+}
+
 /** Parse a single command string into [cmd, ...args] on whitespace. */
 function splitCommand(command: string): { cmd: string; args: string[] } {
   const parts = command.trim().split(/\s+/).filter(Boolean);

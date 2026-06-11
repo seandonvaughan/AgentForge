@@ -252,6 +252,8 @@ export interface TestResult {
   newFailures: string[];
   rawOutputPath: string;
   exitCode: number;
+  /** Cwd used for the cycle-level VERIFY command. */
+  verifyCwd?: string;
 }
 
 export interface RankedItem {
@@ -331,6 +333,7 @@ export interface CycleResult {
   epicIntegration?: {
     branch: string;
     epicId: string;
+    worktreePath?: string;
     pushed: boolean;
     mergedBranches: string[];
   };

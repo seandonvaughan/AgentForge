@@ -42,6 +42,10 @@ export interface TestProgressBus {
   publish: (topic: string, payload: unknown) => void;
 }
 
+export interface RealTestRunOptions {
+  cwd?: string;
+}
+
 /**
  * Base error type for the test runner. Distinct from CycleKilledError so the
  * orchestrator can decide whether a runner blowup should kill the cycle or
@@ -82,8 +86,9 @@ export class RealTestRunner {
     private readonly bus?: TestProgressBus,
   ) {}
 
-  async run(cycleId: string): Promise<TestResult> {
-    const outputFile = join(this.cwd, '.agentforge/cycles', cycleId, 'test-results.json');
+  async run(cycleId: string, opts: RealTestRunOptions = {}): Promise<TestResult> {
+    const runCwd = opts.cwd ?? this.cwd;
+    const outputFile = join(runCwd, '.agentforge/cycles', cycleId, 'test-results.json');
     mkdirSync(dirname(outputFile), { recursive: true });
 
     const cmdParts = parseCommandArgs(this.config.command);
@@ -115,6 +120,7 @@ export class RealTestRunner {
       this._streamProgressLines(
         invocation.command,
         invocation.args,
+        runCwd,
         timeoutMs,
         invocation.windowsVerbatimArguments,
       );
@@ -122,7 +128,7 @@ export class RealTestRunner {
 
     try {
       const result = await execFileAsync(invocation.command, invocation.args, {
-        cwd: this.cwd,
+        cwd: runCwd,
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
         env: buildTestSubprocessEnv(),
@@ -151,7 +157,7 @@ export class RealTestRunner {
       // because tests failed" — fall through to JSON parsing below.
     }
 
-    const rawLogPath = join(this.cwd, '.agentforge/cycles', cycleId, 'tests-raw.log');
+    const rawLogPath = join(runCwd, '.agentforge/cycles', cycleId, 'tests-raw.log');
     if (this.config.saveRawLog) {
       writeFileSync(rawLogPath, stdout + '\n--- STDERR ---\n' + stderr);
     }
@@ -163,7 +169,7 @@ export class RealTestRunner {
     }
 
     const raw = JSON.parse(readFileSync(outputFile, 'utf8'));
-    return this.parseVitestJson(raw, rawLogPath, startedAt, exitCode);
+    return this.parseVitestJson(raw, rawLogPath, startedAt, exitCode, runCwd);
   }
 
   /**
@@ -177,6 +183,7 @@ export class RealTestRunner {
   private _streamProgressLines(
     file: string,
     args: string[],
+    cwd: string,
     timeoutMs: number,
     windowsVerbatimArguments?: boolean,
   ): void {
@@ -189,7 +196,7 @@ export class RealTestRunner {
 
     try {
       const child = spawn(file, args, {
-        cwd: this.cwd,
+        cwd,
         env: buildTestSubprocessEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: timeoutMs,
@@ -267,6 +274,7 @@ export class RealTestRunner {
     rawLogPath: string,
     startedAt: number,
     exitCode: number,
+    verifyCwd: string,
   ): TestResult {
     const passed = raw.numPassedTests ?? 0;
     const failed = raw.numFailedTests ?? 0;
@@ -314,6 +322,7 @@ export class RealTestRunner {
       newFailures,
       rawOutputPath: rawLogPath,
       exitCode,
+      verifyCwd,
     };
   }
 }

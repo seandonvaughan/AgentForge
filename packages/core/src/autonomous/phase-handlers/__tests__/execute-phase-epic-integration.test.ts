@@ -151,6 +151,7 @@ describe('execute phase — epic wave integration (P0.4)', () => {
     // KEYSTONE: the integration worktree is NOT removed by the execute phase —
     // it must survive until the cycle-runner's release stage pushes + opens the PR.
     const intWtPath = integrationWorktreePathFor(tmpRoot, epic.branch);
+    expect(epic.worktreePath).toBe(intWtPath);
     expect(existsSync(intWtPath)).toBe(true);
     // Both children's files landed on the integration branch.
     expect(existsSync(join(intWtPath, 'a.ts'))).toBe(true);
