@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PhaseScheduler, KillSwitch, CycleLogger, DEFAULT_CYCLE_CONFIG } from '@agentforge/core';
@@ -370,6 +370,47 @@ describe('PhaseScheduler', () => {
     );
     expect(checkpoint.resumeFromPhase).toBe('execute');
     expect(checkpoint.completedPhases).toEqual(['audit', 'plan', 'assign']);
+  });
+
+  it('does not regress completed phases when a resumed phase fails before progress', async () => {
+    const { bus, logger, killSwitch } = makeDeps();
+    const checkpointPath = join(tmpDir, '.agentforge', 'cycles', cycleId, 'checkpoint-cycle.json');
+    const originalCheckpoint = {
+      v: 1,
+      cycleId,
+      capturedAt: '2026-06-11T00:00:00.000Z',
+      resumeFromPhase: 'execute',
+      completedPhases: ['audit', 'plan', 'assign'],
+      budgetUsd: DEFAULT_CYCLE_CONFIG.budget.perCycleUsd,
+      spentUsd: 1.5,
+    };
+    writeFileSync(checkpointPath, JSON.stringify(originalCheckpoint, null, 2), 'utf8');
+    const before = readFileSync(checkpointPath, 'utf8');
+
+    const handlers = makeAllPhasesCompleteHandlers();
+    handlers.execute = async () => {
+      throw new Error('injected resume failure');
+    };
+
+    const scheduler = new PhaseScheduler(
+      {
+        sprintId,
+        sprintVersion: '6.4.0',
+        projectRoot: tmpDir,
+        adapter: {} as any,
+        bus,
+        runtime: {} as any,
+        cycleId,
+        skipToPhase: 'execute',
+      },
+      killSwitch,
+      logger,
+      handlers as any,
+    );
+
+    await expect(scheduler.run()).rejects.toThrow(/injected resume failure/);
+
+    expect(readFileSync(checkpointPath, 'utf8')).toBe(before);
   });
 
   it('ignores events with mismatched sprintId', async () => {

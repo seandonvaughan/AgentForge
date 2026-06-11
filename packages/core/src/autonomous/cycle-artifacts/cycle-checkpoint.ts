@@ -10,7 +10,7 @@
 // /^[a-zA-Z0-9-]{8,64}$/ — we use the regex's matched substring rather than
 // the raw caller input so the static analyzer can trace a sanitized value.
 
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 
@@ -119,29 +119,74 @@ function resolveLegacyCheckpointPath(cycleDir: string): string {
  */
 export function writeCheckpoint(cycleDir: string, checkpoint: CycleCheckpoint): void {
   const parsed = CycleCheckpointSchema.parse(checkpoint);
+  const existing = readCheckpoint(cycleDir);
+  const merged = mergeCheckpointForWrite(existing, parsed);
+  if (existing && merged === existing) return;
 
   const finalPath = resolveCheckpointPath(cycleDir);
   const tmpPath = `${finalPath}.tmp`;
 
   mkdirSync(dirname(finalPath), { recursive: true });
 
-  writeFileSync(tmpPath, JSON.stringify(parsed, null, 2), 'utf8');
-  renameReplacingExisting(tmpPath, finalPath);
+  writeFileSync(tmpPath, JSON.stringify(merged, null, 2), 'utf8');
+  renameSync(tmpPath, finalPath);
 }
 
-function renameReplacingExisting(tmpPath: string, finalPath: string): void {
-  try {
-    renameSync(tmpPath, finalPath);
-    return;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'EEXIST' && code !== 'EPERM') {
-      throw err;
-    }
+function mergeCheckpointForWrite(
+  existing: CycleCheckpoint | null,
+  next: CycleCheckpoint,
+): CycleCheckpoint {
+  if (!existing || existing.cycleId !== next.cycleId) {
+    return next;
   }
 
-  rmSync(finalPath, { force: true });
-  renameSync(tmpPath, finalPath);
+  if (
+    next.resumeFromPhase === 'audit' &&
+    next.completedPhases.length === 0 &&
+    existing.completedPhases.length > 0
+  ) {
+    return existing;
+  }
+
+  const resumeIdx = PHASE_SEQUENCE_INDEX[next.resumeFromPhase];
+  const preservableExisting = existing.completedPhases.filter(
+    (phase) => PHASE_SEQUENCE_INDEX[phase] < resumeIdx,
+  );
+  const completedPhases = orderedPhaseUnion([
+    ...preservableExisting,
+    ...next.completedPhases,
+  ]);
+
+  if (
+    existing.resumeFromPhase === next.resumeFromPhase &&
+    samePhaseList(existing.completedPhases, completedPhases)
+  ) {
+    return existing;
+  }
+
+  return { ...next, completedPhases };
+}
+
+const PHASE_SEQUENCE_INDEX: Record<PhaseName, number> = {
+  audit: 0,
+  plan: 1,
+  assign: 2,
+  execute: 3,
+  test: 4,
+  review: 5,
+  gate: 6,
+  release: 7,
+  learn: 8,
+};
+
+function orderedPhaseUnion(phases: PhaseName[]): PhaseName[] {
+  return [...new Set(phases)].sort(
+    (a, b) => PHASE_SEQUENCE_INDEX[a] - PHASE_SEQUENCE_INDEX[b],
+  );
+}
+
+function samePhaseList(a: PhaseName[], b: PhaseName[]): boolean {
+  return a.length === b.length && a.every((phase, idx) => phase === b[idx]);
 }
 
 /**

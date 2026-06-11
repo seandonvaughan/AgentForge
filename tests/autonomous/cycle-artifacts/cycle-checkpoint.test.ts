@@ -75,6 +75,57 @@ describe('cycle-checkpoint', () => {
       expect(raw.resumeFromPhase).toBe('assign');
     });
 
+    it('load-merges existing completed phases into later checkpoint writes', () => {
+      writeCheckpoint(
+        cycleDir,
+        makeCheckpoint({
+          completedPhases: ['audit', 'plan', 'assign'],
+          resumeFromPhase: 'execute',
+        }),
+      );
+
+      writeCheckpoint(
+        cycleDir,
+        makeCheckpoint({
+          capturedAt: '2026-06-11T00:00:00.000Z',
+          completedPhases: ['execute'],
+          resumeFromPhase: 'test',
+          spentUsd: 2,
+        }),
+      );
+
+      const raw = JSON.parse(readFileSync(join(cycleDir, 'checkpoint-cycle.json'), 'utf8'));
+      expect(raw.resumeFromPhase).toBe('test');
+      expect(raw.completedPhases).toEqual(['audit', 'plan', 'assign', 'execute']);
+      expect(raw.spentUsd).toBe(2);
+    });
+
+    it('leaves a resume checkpoint byte-identical when a failed resume adds no progress', () => {
+      writeCheckpoint(
+        cycleDir,
+        makeCheckpoint({
+          capturedAt: '2026-06-11T00:00:00.000Z',
+          completedPhases: ['audit', 'plan', 'assign'],
+          resumeFromPhase: 'execute',
+          spentUsd: 1.5,
+        }),
+      );
+      const checkpointPath = join(cycleDir, 'checkpoint-cycle.json');
+      const before = readFileSync(checkpointPath, 'utf8');
+
+      writeCheckpoint(
+        cycleDir,
+        makeCheckpoint({
+          capturedAt: '2026-06-11T00:01:00.000Z',
+          completedPhases: [],
+          resumeFromPhase: 'execute',
+          spentUsd: 0,
+        }),
+      );
+
+      expect(readFileSync(checkpointPath, 'utf8')).toBe(before);
+    });
+
     it('persists optional executeProgress when provided', () => {
       const ckpt = makeCheckpoint({
         resumeFromPhase: 'test',
