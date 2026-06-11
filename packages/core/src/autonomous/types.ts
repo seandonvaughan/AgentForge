@@ -248,6 +248,7 @@ export interface TestResult {
   total: number;
   passRate: number;
   durationMs: number;
+  verifyCwd?: string;
   failedTests: FailedTest[];
   newFailures: string[];
   rawOutputPath: string;
