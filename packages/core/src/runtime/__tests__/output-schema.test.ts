@@ -42,4 +42,42 @@ describe('normalizeStrictOutputSchema', () => {
 
     expect(normalizeStrictOutputSchema(schema)).toBe(schema);
   });
+
+  it('recursively requires every property on nested strict object schemas', () => {
+    const normalized = normalizeStrictOutputSchema({
+      name: 'epic_plan',
+      strict: true,
+      schema: {
+        type: 'object',
+        required: ['children'],
+        properties: {
+          children: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id'],
+              properties: {
+                id: { type: 'string' },
+                files: { type: 'array', items: { type: 'string' } },
+                metadata: {
+                  type: 'object',
+                  required: ['owner'],
+                  properties: {
+                    owner: { type: 'string' },
+                    notes: { type: 'array', items: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const child = ((normalized.schema.properties.children as any).items) as any;
+    expect(child.required).toEqual(['id', 'files', 'metadata']);
+    expect(child.additionalProperties).toBe(false);
+    expect(child.properties.metadata.required).toEqual(['owner', 'notes']);
+    expect(child.properties.metadata.additionalProperties).toBe(false);
+  });
 });
