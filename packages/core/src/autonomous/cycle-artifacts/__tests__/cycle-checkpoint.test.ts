@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readCheckpoint, writeCheckpoint } from '../cycle-checkpoint.js';
@@ -43,7 +43,34 @@ describe('cycle checkpoint persistence', () => {
       completedPhases: ['audit'],
       spentUsd: 0.5,
     });
-    expect(existsSync(join(cycleDir, 'checkpoint.json.tmp'))).toBe(false);
+    expect(existsSync(join(cycleDir, 'checkpoint-cycle.json.tmp'))).toBe(false);
+  });
+
+  it('does not clobber completed phases when a resume failure writes no progress', () => {
+    const cycleDir = join(tmpDir, '.agentforge', 'cycles', cycleId);
+
+    writeCheckpoint(cycleDir, {
+      v: 1,
+      cycleId,
+      capturedAt: '2026-05-25T00:00:00.000Z',
+      resumeFromPhase: 'execute',
+      completedPhases: ['audit', 'plan', 'assign'],
+      budgetUsd: 200,
+      spentUsd: 1.5,
+    });
+    const before = readFileSync(join(cycleDir, 'checkpoint-cycle.json'), 'utf8');
+
+    writeCheckpoint(cycleDir, {
+      v: 1,
+      cycleId,
+      capturedAt: '2026-05-25T00:01:00.000Z',
+      resumeFromPhase: 'execute',
+      completedPhases: [],
+      budgetUsd: 200,
+      spentUsd: 0,
+    });
+
+    expect(readFileSync(join(cycleDir, 'checkpoint-cycle.json'), 'utf8')).toBe(before);
   });
 });
 
