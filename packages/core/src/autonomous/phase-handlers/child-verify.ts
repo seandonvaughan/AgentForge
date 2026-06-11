@@ -559,23 +559,30 @@ export async function verifyChildWorktree(
       affectedTests,
     };
   }
+  type DependencyRepairAttempt =
+    | { attempted: false }
+    | { attempted: true; failure?: ChildVerifyFailure };
+
   let repairedDependencies = false;
-  const repairDependenciesOnce = async (): Promise<ChildVerifyFailure | null> => {
-    if (repairedDependencies) return null;
+  const repairDependenciesOnce = async (): Promise<DependencyRepairAttempt> => {
+    if (repairedDependencies) return { attempted: false };
     repairedDependencies = true;
     const installed = (marker: string): boolean =>
       existsSync(join(worktreePath, 'node_modules', marker));
     const install = dependencyInstallCommand(worktreePath, detected, installed, true);
-    if (!install) return null;
+    if (!install) return { attempted: false };
     const repair = await runDependencyInstall(worktreePath, install, runner);
-    if (repair.ok) return null;
+    if (repair.ok) return { attempted: true };
     return {
-      check: 'deps',
-      severity: 'failure',
-      message:
-        `Worktree dependency repair failed (${formatCommandExit(repair)}): ` +
-        `${install.cmd} ${install.args.join(' ')}`,
-      outputTail: tail(repair.output),
+      attempted: true,
+      failure: {
+        check: 'deps',
+        severity: 'failure',
+        message:
+          `Worktree dependency repair failed (${formatCommandExit(repair)}): ` +
+          `${install.cmd} ${install.args.join(' ')}`,
+        outputTail: tail(repair.output),
+      },
     };
   };
 
@@ -584,10 +591,10 @@ export async function verifyChildWorktree(
   if (tc.cmd.length > 0) {
     let res = await runChildVerifyCommand(runner, tc.cmd, tc.args, worktreePath);
     if (!res.ok && isDependencyStartupFailure(res.output)) {
-      const repairFailure = await repairDependenciesOnce();
-      if (repairFailure) {
-        failures.push(repairFailure);
-      } else {
+      const repair = await repairDependenciesOnce();
+      if (repair.attempted && repair.failure) {
+        failures.push(repair.failure);
+      } else if (repair.attempted) {
         res = await runChildVerifyCommand(runner, tc.cmd, tc.args, worktreePath);
       }
     }
@@ -614,10 +621,10 @@ export async function verifyChildWorktree(
       const testArgs = [...vt.args, 'related', '--run', ...excludeArgs, ...affectedTests];
       let res = await runChildVerifyCommand(runner, vt.cmd, testArgs, worktreePath);
       if (!res.ok && isDependencyStartupFailure(res.output)) {
-        const repairFailure = await repairDependenciesOnce();
-        if (repairFailure) {
-          failures.push(repairFailure);
-        } else {
+        const repair = await repairDependenciesOnce();
+        if (repair.attempted && repair.failure) {
+          failures.push(repair.failure);
+        } else if (repair.attempted) {
           res = await runChildVerifyCommand(runner, vt.cmd, testArgs, worktreePath);
         }
       }

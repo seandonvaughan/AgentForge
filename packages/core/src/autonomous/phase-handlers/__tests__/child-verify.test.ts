@@ -40,6 +40,14 @@ function runnerWith(opts: {
   return { runner, calls };
 }
 
+function makePnpmRepairWorktree(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'child-verify-repair-'));
+  writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+  mkdirSync(join(dir, 'node_modules'), { recursive: true });
+  writeFileSync(join(dir, 'node_modules', '.modules.yaml'), 'installed\n');
+  return dir;
+}
+
 describe('isTestFilePath', () => {
   it('matches .test/.spec across extensions and normalizes backslashes', () => {
     expect(isTestFilePath('packages/core/src/foo.test.ts')).toBe(true);
@@ -123,11 +131,8 @@ describe('verifyChildWorktree — failing scoped tests', () => {
 
 describe('verifyChildWorktree — dependency startup repair', () => {
   it('force-reinstalls dependencies once and retries tests on Vitest startup import failures', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'child-verify-repair-'));
+    const dir = makePnpmRepairWorktree();
     try {
-      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
-      mkdirSync(join(dir, 'node_modules'), { recursive: true });
-      writeFileSync(join(dir, 'node_modules', '.modules.yaml'), 'installed\n');
       const calls: Array<{ cmd: string; args: string[] }> = [];
       let testAttempts = 0;
       const runner: ChildVerifyCommandRunner = async (cmd, args) => {
@@ -159,6 +164,169 @@ describe('verifyChildWorktree — dependency startup repair', () => {
         cmd: 'corepack',
         args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline', '--force'],
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports dependency repair failure without retrying tests', async () => {
+    const dir = makePnpmRepairWorktree();
+    try {
+      const calls: Array<{ cmd: string; args: string[] }> = [];
+      let testAttempts = 0;
+      const runner: ChildVerifyCommandRunner = async (cmd, args) => {
+        calls.push({ cmd, args });
+        if (args.includes('install')) {
+          return { ok: false, code: 1, output: 'pnpm relink failed' };
+        }
+        if (args.includes('related')) {
+          testAttempts += 1;
+          return {
+            ok: false,
+            code: 1,
+            output:
+              "TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier '#module-evaluator' is not defined",
+          };
+        }
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const result = await verifyChildWorktree({
+        worktreePath: dir,
+        changedFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        declaredFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        runner,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(testAttempts).toBe(1);
+      expect(calls.filter((call) => call.args.includes('install'))).toHaveLength(1);
+      expect(result.failures.find((failure) => failure.check === 'deps')?.outputTail).toContain(
+        'pnpm relink failed',
+      );
+      expect(result.failures.find((failure) => failure.check === 'tests')?.outputTail).toContain(
+        'ERR_PACKAGE_IMPORT_NOT_DEFINED',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('surfaces the retried test failure when repair succeeds but tests still fail', async () => {
+    const dir = makePnpmRepairWorktree();
+    try {
+      let testAttempts = 0;
+      const runner: ChildVerifyCommandRunner = async (_cmd, args) => {
+        if (args.includes('install')) {
+          return { ok: true, code: 0, output: '' };
+        }
+        if (args.includes('related')) {
+          testAttempts += 1;
+          if (testAttempts === 1) {
+            return {
+              ok: false,
+              code: 1,
+              output:
+                "TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier '#module-evaluator' is not defined",
+            };
+          }
+          return { ok: false, code: 1, output: 'FAIL src/impl.test.ts\nAssertionError' };
+        }
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const result = await verifyChildWorktree({
+        worktreePath: dir,
+        changedFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        declaredFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        runner,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(testAttempts).toBe(2);
+      const testFailure = result.failures.find((failure) => failure.check === 'tests');
+      expect(testFailure?.outputTail).toContain('AssertionError');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not repair or retry ordinary test failures', async () => {
+    const dir = makePnpmRepairWorktree();
+    try {
+      const calls: Array<{ cmd: string; args: string[] }> = [];
+      let testAttempts = 0;
+      const runner: ChildVerifyCommandRunner = async (cmd, args) => {
+        calls.push({ cmd, args });
+        if (args.includes('related')) {
+          testAttempts += 1;
+          return { ok: false, code: 1, output: 'FAIL src/impl.test.ts\nAssertionError' };
+        }
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const result = await verifyChildWorktree({
+        worktreePath: dir,
+        changedFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        declaredFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        runner,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(testAttempts).toBe(1);
+      expect(calls.some((call) => call.args.includes('install'))).toBe(false);
+      expect(result.failures.find((failure) => failure.check === 'tests')?.outputTail).toContain(
+        'AssertionError',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not retry a second startup failure after the repair budget is spent', async () => {
+    const dir = makePnpmRepairWorktree();
+    try {
+      let typecheckAttempts = 0;
+      let testAttempts = 0;
+      let installAttempts = 0;
+      const runner: ChildVerifyCommandRunner = async (_cmd, args) => {
+        if (args.includes('install')) {
+          installAttempts += 1;
+          return { ok: true, code: 0, output: '' };
+        }
+        if (args.includes('related')) {
+          testAttempts += 1;
+          return {
+            ok: false,
+            code: 1,
+            output:
+              "TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier '#module-evaluator' is not defined",
+          };
+        }
+        typecheckAttempts += 1;
+        if (typecheckAttempts === 1) {
+          return {
+            ok: false,
+            code: 1,
+            output:
+              "TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier '#module-evaluator' is not defined",
+          };
+        }
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const result = await verifyChildWorktree({
+        worktreePath: dir,
+        changedFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        declaredFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        runner,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(installAttempts).toBe(1);
+      expect(typecheckAttempts).toBe(2);
+      expect(testAttempts).toBe(1);
+      expect(result.failures.filter((failure) => failure.check === 'tests')).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
