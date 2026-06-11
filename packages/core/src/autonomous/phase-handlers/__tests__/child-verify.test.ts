@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import {
   verifyChildWorktree,
   createSerialChildVerifyCommandRunner,
+  detectPackageCommands,
+  ensureWorktreeDependencies,
   resolveChildVerifyCommandForExecFile,
   isTestFilePath,
   isCiConfigPath,
@@ -82,6 +84,46 @@ describe('verifyChildWorktree — all green', () => {
     expect(result.failures.filter((f) => f.severity === 'failure')).toHaveLength(0);
     expect(result.requiresFullGates).toBe(false);
     expect(result.affectedTests).toContain('packages/core/src/impl.test.ts');
+  });
+
+  it('installs worktree dependencies exactly once before typecheck and tests', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-order-'));
+    try {
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      const calls: Array<{ cmd: string; args: string[] }> = [];
+      const runner: ChildVerifyCommandRunner = async (cmd, args) => {
+        calls.push({ cmd, args });
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const result = await verifyChildWorktree({
+        worktreePath: dir,
+        changedFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        declaredFiles: ['src/impl.ts', 'src/impl.test.ts'],
+        runner,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(calls).toHaveLength(3);
+      expect(calls[0]).toEqual({
+        cmd: 'corepack',
+        args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+      });
+      expect(calls[1]).toEqual({
+        cmd: 'corepack',
+        args: ['pnpm', 'exec', 'tsc', '-b', '--pretty', 'false'],
+      });
+      expect(calls[2]?.cmd).toBe('corepack');
+      expect(calls[2]?.args.slice(0, 5)).toEqual([
+        'pnpm',
+        'exec',
+        'vitest',
+        'related',
+        '--run',
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -266,6 +308,85 @@ describe('createSerialChildVerifyCommandRunner', () => {
 
     expect(started).toEqual(['first', 'second']);
     expect(maxActive).toBe(1);
+  });
+});
+
+describe('ensureWorktreeDependencies', () => {
+  it('runs pnpm install once with an injected runner when the completion marker is absent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-deps-'));
+    try {
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      const calls: Array<{ cmd: string; args: string[]; cwd: string }> = [];
+      const runner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
+        calls.push({ cmd, args, cwd });
+        return { ok: true, code: 0, output: '' };
+      };
+
+      const failure = await ensureWorktreeDependencies(
+        dir,
+        detectPackageCommands(dir),
+        runner,
+      );
+
+      expect(failure).toBeNull();
+      expect(calls).toEqual([
+        {
+          cmd: 'corepack',
+          args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+          cwd: dir,
+        },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips install when pnpm node_modules has the completed marker', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-deps-'));
+    try {
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      mkdirSync(join(dir, 'node_modules'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules', '.modules.yaml'), 'installed\n');
+      const runner = vi.fn(allGreenRunner);
+
+      const failure = await ensureWorktreeDependencies(
+        dir,
+        detectPackageCommands(dir),
+        runner,
+      );
+
+      expect(failure).toBeNull();
+      expect(runner).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a deps failure when the injected install runner fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'child-verify-deps-'));
+    try {
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+      const runner: ChildVerifyCommandRunner = async () => ({
+        ok: false,
+        code: 1,
+        output: 'ERR_PNPM_NO_OFFLINE store miss',
+      });
+
+      const failure = await ensureWorktreeDependencies(
+        dir,
+        detectPackageCommands(dir),
+        runner,
+      );
+
+      expect(failure).toMatchObject({
+        check: 'deps',
+        severity: 'failure',
+      });
+      expect(failure?.message).toContain('corepack pnpm install');
+      expect(failure?.outputTail).toContain('ERR_PNPM_NO_OFFLINE');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
