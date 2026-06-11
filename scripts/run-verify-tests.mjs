@@ -15,7 +15,7 @@
  */
 import { spawnSync, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { freemem, cpus } from 'node:os';
+import { freemem, totalmem, cpus } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import process from 'node:process';
@@ -31,6 +31,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const ROOT = process.cwd();
+const BYTES_PER_GB = 1e9;
 
 function loadAutonomousYaml() {
   try {
@@ -82,6 +83,116 @@ function runVitest(args, heapCapMb) {
   return { code: res.status, signal: res.signal };
 }
 
+function parsePositiveNumber(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parsePositiveInteger(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseDarwinVmStat(vmStat) {
+  const pageSize = Number.parseInt(vmStat.match(/page size of (\d+) bytes/)?.[1] ?? '', 10);
+  const activePages = Number.parseInt(vmStat.match(/Pages active:\s+(\d+)\./)?.[1] ?? '', 10);
+  const wiredPages = Number.parseInt(vmStat.match(/Pages wired down:\s+(\d+)\./)?.[1] ?? '', 10);
+  if (!Number.isInteger(pageSize) || !Number.isInteger(activePages) || !Number.isInteger(wiredPages)) {
+    return null;
+  }
+  return {
+    darwinActiveGb: (activePages * pageSize) / BYTES_PER_GB,
+    darwinWiredGb: (wiredPages * pageSize) / BYTES_PER_GB,
+  };
+}
+
+function readDarwinVmStat() {
+  if (typeof process.env.AGENTFORGE_VERIFY_TEST_VM_STAT === 'string') {
+    return process.env.AGENTFORGE_VERIFY_TEST_VM_STAT;
+  }
+  try {
+    return execFileSync('vm_stat', [], { encoding: 'utf8' });
+  } catch {
+    return null;
+  }
+}
+
+function resolveAvailableMemory() {
+  const platform = process.env.AGENTFORGE_VERIFY_TEST_PLATFORM || process.platform;
+  const freeGb = freemem() / BYTES_PER_GB;
+  const totalGb = parsePositiveNumber(process.env.AGENTFORGE_VERIFY_TEST_TOTAL_GB) ?? totalmem() / BYTES_PER_GB;
+  const availableGbOverride = parsePositiveNumber(process.env.AGENTFORGE_VERIFY_AVAILABLE_GB);
+
+  if (availableGbOverride !== null) {
+    return {
+      source: 'env',
+      platform,
+      freeGb,
+      totalGb,
+      darwinActiveGb: null,
+      darwinWiredGb: null,
+      availableGbOverrideRaw: process.env.AGENTFORGE_VERIFY_AVAILABLE_GB ?? null,
+      availableGb: availableGbOverride,
+    };
+  }
+
+  if (platform === 'darwin') {
+    const vmStat = readDarwinVmStat();
+    const parsed = typeof vmStat === 'string' ? parseDarwinVmStat(vmStat) : null;
+    if (parsed) {
+      return {
+        source: 'darwin-total-minus-active-wired',
+        platform,
+        freeGb,
+        totalGb,
+        ...parsed,
+        availableGbOverrideRaw: null,
+        availableGb: Math.max(0, totalGb - parsed.darwinActiveGb - parsed.darwinWiredGb),
+      };
+    }
+  }
+
+  return {
+    source: 'freemem',
+    platform,
+    freeGb,
+    totalGb,
+    darwinActiveGb: null,
+    darwinWiredGb: null,
+    availableGbOverrideRaw: null,
+    availableGb: freeGb,
+  };
+}
+
+function selectVerifyWorkers(cfg) {
+  const memory = resolveAvailableMemory();
+  const cores = cpus().length;
+  const minWorkersOverride = parsePositiveInteger(process.env.AGENTFORGE_VERIFY_MIN_WORKERS);
+  const minWorkers = Math.max(2, minWorkersOverride ?? 2);
+  const plannerWorkers = computeWorkers(memory.availableGb, cores, {
+    reserveGb: cfg.reserveGb,
+    perWorkerGb: cfg.perWorkerGb,
+  });
+  const workers = Math.max(minWorkers, plannerWorkers);
+
+  return {
+    workers,
+    decision: {
+      ...memory,
+      reserveGb: cfg.reserveGb,
+      perWorkerGb: cfg.perWorkerGb,
+      cores,
+      minWorkersOverrideRaw: process.env.AGENTFORGE_VERIFY_MIN_WORKERS ?? null,
+      minWorkersOverride,
+      minWorkers,
+      plannerWorkers,
+      workers,
+    },
+  };
+}
+
 function main() {
   const conf = loadAutonomousYaml();
   const cfg = resolveVerifyConfig(conf.testing);
@@ -99,10 +210,7 @@ function main() {
     affectedMode: cfg.affectedMode,
   });
 
-  let workers = computeWorkers(freemem() / 1e9, cpus().length, {
-    reserveGb: cfg.reserveGb,
-    perWorkerGb: cfg.perWorkerGb,
-  });
+  let { workers, decision: workerSelection } = selectVerifyWorkers(cfg);
 
   // Forward any args appended by the caller (e.g. RealTestRunner appends
   // `-- --reporter=json --outputFile <path>` so it can parse the report). Strip
@@ -111,7 +219,10 @@ function main() {
   const passthroughArgs = process.argv.slice(2).filter((a) => a !== '--');
 
   console.error(
-    `[verify-gate] mode=${mode} workers=${workers} changedFiles=${changedFiles.length} freeGb=${(freemem() / 1e9).toFixed(1)} passthrough=${passthroughArgs.length}`,
+    `[verify-gate] worker-selection ${JSON.stringify(workerSelection)}`,
+  );
+  console.error(
+    `[verify-gate] mode=${mode} workers=${workers} changedFiles=${changedFiles.length} availableGb=${workerSelection.availableGb.toFixed(1)} passthrough=${passthroughArgs.length}`,
   );
 
   let { code, signal } = runVitest(
