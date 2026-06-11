@@ -23,6 +23,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  resolveCommandForExecFile,
+  type ResolvedExecFileCommand,
+} from '../subprocess-command.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -332,11 +336,13 @@ async function ensureWorktreeDependencies(
 
 /** The default production command runner: execFile, no shell. Output is tailed. */
 const rawRealCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) => {
+  const invocation = resolveChildVerifyCommandForExecFile(cmd, args);
   try {
-    const { stdout, stderr } = await execFileAsync(cmd, args, {
+    const { stdout, stderr } = await execFileAsync(invocation.command, invocation.args, {
       cwd,
       maxBuffer: 50 * 1024 * 1024,
       windowsHide: true,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments,
     });
     return { ok: true, code: 0, output: `${stdout.toString()}${stderr.toString()}` };
   } catch (err: unknown) {
@@ -359,6 +365,16 @@ const rawRealCommandRunner: ChildVerifyCommandRunner = async (cmd, args, cwd) =>
 };
 
 const realCommandRunner = createSerialChildVerifyCommandRunner(rawRealCommandRunner);
+
+export function resolveChildVerifyCommandForExecFile(
+  cmd: string,
+  args: string[],
+  platform: NodeJS.Platform = process.platform,
+  nodeExecPath: string = process.execPath,
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedExecFileCommand {
+  return resolveCommandForExecFile(cmd, args, platform, nodeExecPath, env);
+}
 
 /** Parse a single command string into [cmd, ...args] on whitespace. */
 function splitCommand(command: string): { cmd: string; args: string[] } {

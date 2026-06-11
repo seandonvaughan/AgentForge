@@ -8,9 +8,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   verifyChildWorktree,
   createSerialChildVerifyCommandRunner,
+  resolveChildVerifyCommandForExecFile,
   isTestFilePath,
   isCiConfigPath,
   selectChildAffectedFiles,
@@ -262,6 +266,33 @@ describe('createSerialChildVerifyCommandRunner', () => {
 
     expect(started).toEqual(['first', 'second']);
     expect(maxActive).toBe(1);
+  });
+});
+
+describe('resolveChildVerifyCommandForExecFile', () => {
+  it('runs Windows corepack through node corepack.js instead of a .cmd shim', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'child-verify-command-'));
+    try {
+      const nodePath = join(tmp, 'node.exe');
+      const corepackJs = join(tmp, 'node_modules', 'corepack', 'dist', 'corepack.js');
+      mkdirSync(join(tmp, 'node_modules', 'corepack', 'dist'), { recursive: true });
+      writeFileSync(corepackJs, '');
+
+      const resolved = resolveChildVerifyCommandForExecFile(
+        'corepack',
+        ['pnpm', 'exec', 'tsc'],
+        'win32',
+        nodePath,
+        { ComSpec: 'cmd.exe' },
+      );
+
+      expect(resolved).toEqual({
+        command: nodePath,
+        args: [corepackJs, 'pnpm', 'exec', 'tsc'],
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
