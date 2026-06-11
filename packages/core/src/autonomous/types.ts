@@ -233,6 +233,37 @@ export interface AgentRunRecord {
   breakdown?: CostBreakdown;
 }
 
+export type ExecuteCheckpointItemStatus = 'completed' | 'failed' | 'skipped';
+
+export interface ExecuteCheckpointItemRecord {
+  itemId: string;
+  status: ExecuteCheckpointItemStatus;
+  costUsd: number;
+  agentId: string;
+  completedAt: string;
+}
+
+export interface ExecuteCheckpoint {
+  cycleId: string;
+  phase: 'execute';
+  completedItemIds: string[];
+  currentItemId: string | null;
+  totalItems: number;
+  lastUpdatedAt: string;
+  schemaVersion: 3;
+  items: Record<string, ExecuteCheckpointItemRecord>;
+}
+
+export interface ExecuteCheckpointItemWrite {
+  cycleId: string;
+  itemId: string;
+  status: ExecuteCheckpointItemStatus;
+  costUsd: number;
+  agentId: string;
+  totalItems?: number;
+  completedAt?: string;
+}
+
 export interface FailedTest {
   file: string;
   suite: string;
