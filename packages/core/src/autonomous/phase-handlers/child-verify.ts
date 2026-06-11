@@ -287,7 +287,7 @@ export function selectChildAffectedFiles(changedFiles: string[]): string[] {
  * surfaced as a structured `deps` failure rather than a misleading
  * typecheck/tests failure.
  */
-async function ensureWorktreeDependencies(
+export async function ensureWorktreeDependencies(
   worktreePath: string,
   detected: DetectedPackageCommands,
   runner: ChildVerifyCommandRunner,
