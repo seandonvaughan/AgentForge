@@ -17,7 +17,7 @@ import type { SpendReport, SpendReportItem } from '../api/epic.js';
 export interface SpendRow {
   itemId: string;
   title: string;
-  plannedUsd: number;
+  plannedUsd: number | null;
   actualUsd: number;
   /** actualUsd − plannedUsd. Positive = over-budget; negative = under-budget. */
   delta: number;
@@ -51,10 +51,10 @@ export interface SpendTotals {
 
 /**
  * Format a USD amount for display with 2 decimal places.
- * Returns "—" for non-finite inputs.
+ * Returns "—" for null or non-finite inputs.
  */
-export function formatUsd(amount: number): string {
-  if (!Number.isFinite(amount)) return '—';
+export function formatUsd(amount: number | null): string {
+  if (amount === null || !Number.isFinite(amount)) return '—';
   return `$${amount.toFixed(2)}`;
 }
 
@@ -87,14 +87,17 @@ export function formatPct(pct: number | null): string {
 /**
  * Build per-item rows with planned-vs-actual variance.
  *
- * Zero-planned guard: when plannedUsd === 0, deltaPct is null and
+ * Missing/zero-planned guard: when plannedUsd is null or 0, deltaPct is null and
  * deltaPctFormatted is "—" to avoid meaningless infinity values.
  */
 export function buildSpendRows(report: SpendReport): SpendRow[] {
   return report.items.map((item: SpendReportItem): SpendRow => {
     const { itemId, title, plannedUsd, actualUsd } = item;
-    const delta = actualUsd - plannedUsd;
-    const deltaPct = plannedUsd === 0 ? null : (delta / plannedUsd) * 100;
+    const planned = plannedUsd ?? 0;
+    const delta = actualUsd - planned;
+    const deltaPct = plannedUsd === null || plannedUsd === 0
+      ? null
+      : (delta / plannedUsd) * 100;
 
     return {
       itemId,

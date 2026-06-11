@@ -82,6 +82,19 @@ describe('buildSpendRows', () => {
     expect(row.deltaPctFormatted).toBe('—');
   });
 
+  it('formats null plannedUsd safely while preserving actual cost', () => {
+    const report: SpendReport = {
+      ...REPORT,
+      items: [{ itemId: 'resumed', title: 'Resumed item', plannedUsd: null, actualUsd: 7.25 }],
+    };
+    const row = buildSpendRows(report)[0]!;
+    expect(row.plannedFormatted).toBe('—');
+    expect(row.actualFormatted).toBe('$7.25');
+    expect(row.delta).toBe(7.25);
+    expect(row.deltaPct).toBeNull();
+    expect(row.deltaPctFormatted).toBe('—');
+  });
+
   it('formats plannedUsd and actualUsd as USD strings', () => {
     const row = buildSpendRows(REPORT)[0]!;
     expect(row.plannedFormatted).toBe('$20.00');
@@ -173,6 +186,10 @@ describe('formatUsd', () => {
 
   it('formats zero as $0.00', () => {
     expect(formatUsd(0)).toBe('$0.00');
+  });
+
+  it('returns — for null', () => {
+    expect(formatUsd(null)).toBe('—');
   });
 
   it('returns — for Infinity', () => {

@@ -11,7 +11,8 @@
  *   07 — invalid cycleId (special chars) → 400
  *   08 — path traversal cycleId → 400
  *   09 — perItem array is preserved
- *   10 — corrupt spend-report.json → 500
+ *   10 — resumed cycle returns non-zero perItem actuals
+ *   11 — corrupt spend-report.json → 500
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -27,6 +28,7 @@ import { cycleSpendReportRoutes, type SpendReport } from '../cycle-spend-report.
 // ---------------------------------------------------------------------------
 
 const CYCLE_ID = 'cycle-spend-abc123';
+const RESUMED_CYCLE_ID = 'cycle-resumed-spend-abc123';
 
 const FIXTURE_REPORT: SpendReport = {
   schemaVersion: 1,
@@ -57,6 +59,35 @@ const FIXTURE_REPORT: SpendReport = {
   generatedAt: '2026-06-10T12:00:00.000Z',
 };
 
+const RESUMED_FIXTURE_REPORT: SpendReport = {
+  schemaVersion: 1,
+  cycleId: RESUMED_CYCLE_ID,
+  epicId: 'epic-resumed-001',
+  objective: 'Resume an interrupted epic and report actuals',
+  budgetUsd: 40,
+  totalUsd: 18.75,
+  executionUsd: 16.25,
+  overheadUsd: 2.5,
+  utilization: 0.8667,
+  perItem: [
+    {
+      itemId: 'item-resume-001',
+      title: 'Complete resumed implementation',
+      plannedUsd: null,
+      actualUsd: 9.5,
+      status: 'completed',
+    },
+    {
+      itemId: 'item-resume-002',
+      title: 'Validate resumed epic',
+      plannedUsd: 6,
+      actualUsd: 6.75,
+      status: 'completed',
+    },
+  ],
+  generatedAt: '2026-06-10T13:00:00.000Z',
+};
+
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
@@ -85,6 +116,12 @@ async function buildApp(projectRoot: string): Promise<FastifyInstance> {
 
 function writeReport(report: SpendReport): void {
   writeFileSync(join(cycleDir, 'spend-report.json'), JSON.stringify(report));
+}
+
+function writeReportForCycle(cycleId: string, report: SpendReport): void {
+  const dir = join(tmpRoot, '.agentforge', 'cycles', cycleId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'spend-report.json'), JSON.stringify(report));
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +277,26 @@ describe('GET /api/v5/cycles/:id/spend-report', () => {
     expect(second.actualUsd).toBe(5.2);
   });
 
-  it('10 — corrupt spend-report.json → 500', async () => {
+  it('10 — resumed cycle preserves non-zero perItem actuals', async () => {
+    writeReportForCycle(RESUMED_CYCLE_ID, RESUMED_FIXTURE_REPORT);
+    app = await buildApp(tmpRoot);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v5/cycles/${RESUMED_CYCLE_ID}/spend-report`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ data: SpendReport }>();
+    expect(body.data.cycleId).toBe(RESUMED_CYCLE_ID);
+    expect(body.data.executionUsd).toBe(16.25);
+    expect(body.data.overheadUsd).toBe(2.5);
+    expect(body.data.perItem.map((item) => item.actualUsd)).toEqual([9.5, 6.75]);
+    expect(body.data.perItem.every((item) => item.actualUsd > 0)).toBe(true);
+    expect(body.data.perItem[0]!.plannedUsd).toBeNull();
+  });
+
+  it('11 — corrupt spend-report.json → 500', async () => {
     writeFileSync(join(cycleDir, 'spend-report.json'), '{ invalid json }');
     app = await buildApp(tmpRoot);
 
