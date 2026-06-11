@@ -250,6 +250,7 @@ export interface TestResult {
   durationMs: number;
   failedTests: FailedTest[];
   newFailures: string[];
+  verifyCwd?: string;
   rawOutputPath: string;
   exitCode: number;
 }
