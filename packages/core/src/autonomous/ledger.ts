@@ -64,18 +64,27 @@ export function appendCycleLedgerEntry(
   const path = ledgerPath(projectRoot);
   try {
     const entries = readCycleLedgerEntries(projectRoot);
-    const existingIndex = entries.findIndex((row) => row.cycleId === entry.cycleId);
-    if (existingIndex === -1) {
-      entries.push(entry);
-    } else {
-      entries[existingIndex] = entry;
+    const nextEntries: CycleLedgerEntry[] = [];
+    let inserted = false;
+    for (const row of entries) {
+      if (row.cycleId === entry.cycleId) {
+        if (!inserted) {
+          nextEntries.push(entry);
+          inserted = true;
+        }
+        continue;
+      }
+      nextEntries.push(row);
+    }
+    if (!inserted) {
+      nextEntries.push(entry);
     }
 
     mkdirSync(dirname(path), { recursive: true });
     const tmp = `${path}.tmp`;
     writeFileSync(
       tmp,
-      entries.map((row) => JSON.stringify(row)).join('\n') + '\n',
+      nextEntries.map((row) => JSON.stringify(row)).join('\n') + '\n',
       'utf8',
     );
     renameSync(tmp, path);
