@@ -18,6 +18,13 @@ const RUNNER = resolve(process.cwd(), 'scripts/run-verify-tests.mjs');
 
 let fixture: string;
 
+function verifyEnv(extra: Record<string, string> = {}) {
+  const env = { ...process.env };
+  delete env.AGENTFORGE_VERIFY_AVAILABLE_GB;
+  delete env.AGENTFORGE_VERIFY_MIN_WORKERS;
+  return { ...env, ...extra };
+}
+
 beforeEach(() => {
   fixture = mkdtempSync(join(tmpdir(), 'verify-gate-fixture-'));
   // A trivial passing test so the gate has something to run.
@@ -50,10 +57,19 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     const res = spawnSync(process.execPath, [RUNNER], {
       cwd: fixture,
       encoding: 'utf8',
-      env: { ...process.env, AGENTFORGE_VERIFY_SUMMARY_DIR: fixture, AGENTFORGE_CHANGED_FILES: '' },
+      env: verifyEnv({
+        AGENTFORGE_VERIFY_SUMMARY_DIR: fixture,
+        AGENTFORGE_CHANGED_FILES: '',
+        AGENTFORGE_VERIFY_AVAILABLE_GB: '1',
+      }),
     });
 
     expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toContain('"source":"env"');
+    expect(res.stderr).toContain('"availableGb":1');
+    expect(res.stderr).toContain('"rawWorkers":1');
+    expect(res.stderr).toContain('"minWorkers":2');
+    expect(res.stderr).toContain('"workers":2');
     const summaryPath = join(fixture, 'verify-gate-summary.json');
     expect(existsSync(summaryPath)).toBe(true);
     const summary = JSON.parse(readFileSync(summaryPath, 'utf8'));
@@ -61,7 +77,24 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     expect(summary.mode).toBe('full');
     expect(summary.exitCode).toBe(0);
     expect(summary.oomRetryCount).toBe(0);
-    expect(summary.workers).toBeGreaterThanOrEqual(1);
+    expect(summary.workers).toBe(2);
+  });
+
+  it('honors AGENTFORGE_VERIFY_MIN_WORKERS above the default floor', () => {
+    const res = spawnSync(process.execPath, [RUNNER], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: verifyEnv({
+        AGENTFORGE_CHANGED_FILES: '',
+        AGENTFORGE_VERIFY_AVAILABLE_GB: '1',
+        AGENTFORGE_VERIFY_MIN_WORKERS: '3',
+      }),
+    });
+
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toContain('"rawWorkers":1');
+    expect(res.stderr).toContain('"minWorkers":3');
+    expect(res.stderr).toContain('"workers":3');
   });
 
   it('forwards appended --reporter=json --outputFile to vitest (the RealTestRunner contract)', () => {
@@ -72,7 +105,7 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     const res = spawnSync(
       process.execPath,
       [RUNNER, '--', '--reporter=json', '--outputFile', reportPath],
-      { cwd: fixture, encoding: 'utf8', env: { ...process.env, AGENTFORGE_CHANGED_FILES: '' } },
+      { cwd: fixture, encoding: 'utf8', env: verifyEnv({ AGENTFORGE_CHANGED_FILES: '' }) },
     );
     expect(res.status, res.stderr).toBe(0);
     expect(existsSync(reportPath)).toBe(true);
