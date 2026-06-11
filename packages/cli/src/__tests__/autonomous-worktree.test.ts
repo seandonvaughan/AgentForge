@@ -9,8 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Hoisted state shared between the vi.mock factory and test bodies.
@@ -157,6 +157,7 @@ const CYCLE_ENV_KEYS = [
   'AUTONOMOUS_MAX_AGENTS',
   'AUTONOMOUS_MAX_ITEMS',
   'AUTONOMOUS_MODEL_CAP',
+  'AUTONOMOUS_WORKTREE_ROOT_DIR',
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -242,9 +243,23 @@ describe('autonomous-worktree: WorktreePool wiring at CLI launch', () => {
     // baseBranch comes from the mocked loadCycleConfig: 'main'
     expect(worktreePoolCalls[0]?.baseBranch).toBe('main');
     expect(worktreePoolCalls[0]?.branchPrefix).toBe('autonomous/');
-    expect(worktreePoolCalls[0]?.rootDir).toContain(join('..', '.agentforge-worktrees'));
+    if (process.platform === 'win32') {
+      expect(worktreePoolCalls[0]?.rootDir).toContain(join(homedir(), '.af-wt'));
+      expect(isAbsolute(worktreePoolCalls[0]!.rootDir!)).toBe(true);
+    } else {
+      expect(worktreePoolCalls[0]?.rootDir).toContain(join('..', '.agentforge-worktrees'));
+    }
     const resolvedWorktreeRoot = resolve(projectRoot, worktreePoolCalls[0]!.rootDir!);
     expect(relative(projectRoot, resolvedWorktreeRoot).startsWith('..')).toBe(true);
+  });
+
+  it('uses AUTONOMOUS_WORKTREE_ROOT_DIR when provided', async () => {
+    const customRoot = join(projectRoot, '..', 'custom-worktrees');
+
+    await runCycleRun(projectRoot, [], { AUTONOMOUS_WORKTREE_ROOT_DIR: customRoot });
+
+    expect(worktreePoolCalls).toHaveLength(1);
+    expect(worktreePoolCalls[0]?.rootDir).toBe(customRoot);
   });
 
   it('normalizes relative project roots before constructing WorktreePool', async () => {

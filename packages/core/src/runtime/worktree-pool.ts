@@ -74,6 +74,7 @@ export class WorktreePool {
   private readonly baseBranch: string;
   private readonly branchPrefix: string;
   private readonly rootDir: string;
+  private readonly rootPath: string;
 
   private readonly handles = new Map<string, WorktreeHandle>();
   private stats: WorktreePoolStats = {
@@ -95,6 +96,9 @@ export class WorktreePool {
     this.baseBranch = opts.baseBranch ?? 'main';
     this.branchPrefix = normalizeBranchPrefix(opts.branchPrefix ?? 'autonomous/');
     this.rootDir = opts.rootDir ?? '.agentforge/worktrees';
+    this.rootPath = isAbsolute(this.rootDir)
+      ? resolve(this.rootDir)
+      : resolve(this.projectRoot, this.rootDir);
   }
 
   /** Enqueue a git-mutating task so `.git/config` writes never race. */
@@ -134,7 +138,7 @@ export class WorktreePool {
       await this.removeStaleCachedWorktreePath(cached.path);
     }
 
-    const wtPath = join(this.projectRoot, this.rootDir, id);
+    const wtPath = join(this.rootPath, id);
 
     // If the directory already exists the worktree was previously created
     // (e.g. by another process or a prior run). Only reuse it when git still
@@ -175,7 +179,7 @@ export class WorktreePool {
     }
 
     // Ensure the parent directory exists.
-    const parentDir = join(this.projectRoot, this.rootDir);
+    const parentDir = this.rootPath;
     mkdirSync(parentDir, { recursive: true });
 
     await this.enqueueGitOp(async () => {
@@ -297,7 +301,7 @@ export class WorktreePool {
   async listActive(): Promise<WorktreeHandle[]> {
     const out = await git(this.projectRoot, ['worktree', 'list', '--porcelain']);
     // Resolve symlinks so macOS /tmp → /private/tmp comparisons work correctly.
-    const absoluteRootDir = realPath(join(this.projectRoot, this.rootDir));
+    const absoluteRootDir = realPath(this.rootPath);
 
     const worktrees: WorktreeHandle[] = [];
 
@@ -522,7 +526,7 @@ export class WorktreePool {
     if (!existsSync(path)) return;
     if (await this.isRegisteredWorktreePath(path)) return;
 
-    const poolRoot = realPath(join(this.projectRoot, this.rootDir));
+    const poolRoot = realPath(this.rootPath);
     const actual = realPath(path);
     const relativePath = relative(poolRoot, actual);
     if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {

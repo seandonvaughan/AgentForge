@@ -160,6 +160,22 @@ describe('WorktreePool', () => {
     expect(existsSync(handle.path)).toBe(true);
   });
 
+  it('supports an absolute worktree rootDir outside the project root', async () => {
+    const absoluteRoot = mkdtempSync(join(tmpdir(), 'af-absolute-worktrees-'));
+    cleanupDirs.push(absoluteRoot);
+    const pool = new WorktreePool({ projectRoot: workingDir, rootDir: absoluteRoot });
+
+    const handle = await pool.allocate({ agentId: 'coder', sessionId: 'absolute-root' });
+
+    expect(handle.path).toBe(join(absoluteRoot, handle.id));
+    expect(existsSync(handle.path)).toBe(true);
+    const active = await pool.listActive();
+    expect(active.some((item) => item.id === handle.id)).toBe(true);
+
+    await pool.release(handle.id);
+    expect(existsSync(handle.path)).toBe(false);
+  });
+
   it('does not link root node_modules into allocated worktrees', async () => {
     const rootNodeModules = join(workingDir, 'node_modules');
     mkdirSync(rootNodeModules, { recursive: true });

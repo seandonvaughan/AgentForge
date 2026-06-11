@@ -11,6 +11,7 @@
 //
 // `autonomous:cycle` remains as a compatibility alias for `cycle run`.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Command } from 'commander';
@@ -1539,6 +1540,9 @@ function buildCycleWorktreeRootDir(projectRoot: string): string {
     .update(process.platform === 'win32' ? resolvedRoot.toLowerCase() : resolvedRoot)
     .digest('hex')
     .slice(0, 12);
+  if (process.platform === 'win32') {
+    return join(homedir(), '.af-wt', rootHash);
+  }
   return join('..', '.agentforge-worktrees', `${repoName}-${rootHash}`);
 }
 
