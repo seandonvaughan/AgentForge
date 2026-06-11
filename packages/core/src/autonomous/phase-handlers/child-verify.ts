@@ -116,6 +116,13 @@ export type ChildVerifyCommandRunner = (
   cwd: string,
 ) => Promise<ChildVerifyCommandResult>;
 
+export interface ProvisionWorktreeDependenciesOptions {
+  /** Absolute path to the worktree whose dependencies should be available. */
+  worktreePath: string;
+  /** Injected command runner; defaults to the same real execFile runner child verify uses. */
+  runner?: ChildVerifyCommandRunner;
+}
+
 export function createSerialChildVerifyCommandRunner(
   baseRunner: ChildVerifyCommandRunner,
 ): ChildVerifyCommandRunner {
@@ -287,7 +294,18 @@ export function selectChildAffectedFiles(changedFiles: string[]): string[] {
  * surfaced as a structured `deps` failure rather than a misleading
  * typecheck/tests failure.
  */
-async function ensureWorktreeDependencies(
+export async function provisionWorktreeDependencies(
+  opts: ProvisionWorktreeDependenciesOptions,
+): Promise<ChildVerifyFailure | null> {
+  const detected = detectPackageCommands(opts.worktreePath);
+  return ensureDetectedWorktreeDependencies(
+    opts.worktreePath,
+    detected,
+    opts.runner ?? realCommandRunner,
+  );
+}
+
+async function ensureDetectedWorktreeDependencies(
   worktreePath: string,
   detected: DetectedPackageCommands,
   runner: ChildVerifyCommandRunner,
@@ -547,7 +565,7 @@ export async function verifyChildWorktree(
   // ── (1.5) Worktree dependency provisioning (pnpm/yarn/npm-with-lockfile) ──
   // Must precede the toolchain checks: without node_modules they fail with a
   // misleading "Command tsc/vitest not found" regardless of the child's code.
-  const depsFailure = await ensureWorktreeDependencies(worktreePath, detected, runner);
+  const depsFailure = await ensureDetectedWorktreeDependencies(worktreePath, detected, runner);
   if (depsFailure) {
     failures.push(depsFailure);
     // The toolchain cannot run — return the structural reason alone instead of
