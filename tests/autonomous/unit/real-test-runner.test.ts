@@ -69,6 +69,21 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
     expect(result.rawOutputPath).toMatch(/\.log$/);
   });
 
+  it('runs and records VERIFY in an override cwd', async () => {
+    const { execFile } = await import('node:child_process');
+    const verifyCwd = join(tmpDir, 'integration-worktree');
+    mkdirSync(verifyCwd, { recursive: true });
+
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+    const result = await runner.run(cycleId, { cwd: verifyCwd });
+
+    const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const [, , opts] = calls.at(-1)!;
+    expect((opts as { cwd: string }).cwd).toBe(verifyCwd);
+    expect(result.verifyCwd).toBe(verifyCwd);
+    expect(result.rawOutputPath).toContain(verifyCwd);
+  });
+
   it('computes newFailures against a prior snapshot', async () => {
     const priorSnapshot = {
       passed: 3,

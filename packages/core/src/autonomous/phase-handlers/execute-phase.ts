@@ -2274,6 +2274,7 @@ export async function runExecutePhase(
       ? {
           branch: integrationBranch,
           epicId: epicParentId,
+          worktreePath: integrationWorktreePath,
           mergedBranches: [...mergedIntoIntegration],
           hadConflicts: integrationHadConflicts,
           // P0.5 — surface CI-config-class touch so the cycle-runner runs

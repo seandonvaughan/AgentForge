@@ -78,6 +78,7 @@ import {
 // P0.4 — KEYSTONE: epic single-PR release pushes the local integration branch and
 // removes its worktree after the PR is opened (never strands integrated work).
 import {
+  integrationWorktreePathFor,
   pushIntegrationBranch,
   removeIntegrationWorktree,
 } from './phase-handlers/wave-integration.js';
@@ -94,6 +95,10 @@ import {
 } from './pre-verify-typecheck.js';
 import { parseCommandArgs, resolveCommandForExecFile } from './subprocess-command.js';
 export { parseCommandArgs } from './subprocess-command.js';
+import {
+  formatChildVerifyError,
+  provisionWorktreeDependencies,
+} from './phase-handlers/child-verify.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { buildVerificationSubprocessEnv } from './verification-env.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
@@ -542,6 +547,7 @@ export function readEpicIntegrationFromDisk(
     | {
         branch?: unknown;
         epicId?: unknown;
+        worktreePath?: unknown;
         mergedBranches?: unknown;
         hadConflicts?: unknown;
         requiresFullGates?: unknown;
@@ -553,6 +559,9 @@ export function readEpicIntegrationFromDisk(
   return {
     branch: integ.branch,
     epicId: integ.epicId,
+    ...(typeof integ.worktreePath === 'string' && integ.worktreePath.length > 0
+      ? { worktreePath: integ.worktreePath }
+      : {}),
     mergedBranches: Array.isArray(integ.mergedBranches)
       ? integ.mergedBranches.filter((b: unknown): b is string => typeof b === 'string')
       : [],
@@ -577,6 +586,18 @@ export function assertObjectiveReleaseIntegration(
   throw new Error(
     'objective cycle has no integration branch — refusing the legacy main-tree release; inspect phases/execute.json',
   );
+}
+
+export function resolveVerifyCwd(
+  projectRoot: string,
+  objective: string | undefined,
+  epicIntegration: EpicIntegrationResult | null,
+): string {
+  if (objective === undefined || epicIntegration === null) return projectRoot;
+  if (typeof epicIntegration.worktreePath === 'string' && epicIntegration.worktreePath.length > 0) {
+    return epicIntegration.worktreePath;
+  }
+  return integrationWorktreePathFor(projectRoot, epicIntegration.branch);
 }
 
 /**
@@ -1874,12 +1895,19 @@ export class CycleRunner {
       currentStep: 'verify',
       detail: 'running project test command',
     });
+    const verifyCwd = resolveVerifyCwd(
+      this.options.cwd,
+      this.options.objective,
+      this.epicIntegration,
+    );
+    await this.provisionVerifyCwd(verifyCwd);
     this.options.bus.publish('sprint.phase.verify.step', {
       cycleId: this.cycleId,
       step: 'tests-started',
       detail: this.options.config.testing.command,
+      verifyCwd,
     });
-    const testResult = await this.options.testRunner.run(this.cycleId);
+    const testResult = await this.options.testRunner.run(this.cycleId, { cwd: verifyCwd });
     this.logger.logTestRun(testResult);
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
@@ -1898,6 +1926,7 @@ export class CycleRunner {
     this.options.bus.publish('sprint.phase.verify.step', {
       cycleId: this.cycleId,
       step: 'tests-complete',
+      verifyCwd,
       passed: testResult.passed,
       failed: testResult.failed,
       total: testResult.total,
@@ -2891,6 +2920,9 @@ Cycle: ${this.cycleId}
       base.epicIntegration = {
         branch: this.epicIntegration.branch,
         epicId: this.epicIntegration.epicId,
+        ...(this.epicIntegration.worktreePath !== undefined
+          ? { worktreePath: this.epicIntegration.worktreePath }
+          : {}),
         pushed: this.epicIntegrationPushedSha !== null,
         mergedBranches: [...this.epicIntegration.mergedBranches],
       };
@@ -3061,6 +3093,18 @@ Cycle: ${this.cycleId}
 
   private getEffectiveWorktreePool(): WorktreePool | undefined {
     return this.options.disableWorktrees ? undefined : this.options.worktreePool;
+  }
+
+  private async provisionVerifyCwd(verifyCwd: string): Promise<void> {
+    if (verifyCwd === this.options.cwd) return;
+    const depsFailure = await provisionWorktreeDependencies(verifyCwd);
+    if (!depsFailure) return;
+    throw new Error(formatChildVerifyError({
+      ok: false,
+      failures: [depsFailure],
+      requiresFullGates: false,
+      affectedTests: [],
+    }));
   }
 
   /**

@@ -147,6 +147,8 @@ export interface EpicIntegrationResult {
   branch: string;
   /** Epic id the integration branch was derived from. */
   epicId: string;
+  /** Absolute path to the local integration worktree that holds the branch. */
+  worktreePath?: string;
   /** Child branches successfully merged into the integration branch (all waves). */
   mergedBranches: string[];
   /** True when at least one wave-merge conflicted (owning items were failed). */
