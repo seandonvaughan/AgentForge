@@ -80,7 +80,14 @@ import {
 import {
   pushIntegrationBranch,
   removeIntegrationWorktree,
+  integrationWorktreePathFor,
 } from './phase-handlers/wave-integration.js';
+import {
+  detectPackageCommands,
+  type ChildVerifyCommandResult,
+  type ChildVerifyCommandRunner,
+  type DetectedPackageCommands,
+} from './phase-handlers/child-verify.js';
 import { KillSwitch } from './kill-switch.js';
 import { CycleLogger } from './cycle-logger.js';
 import { renderPrBody } from './pr-body-renderer.js';
@@ -581,6 +588,72 @@ export function assertObjectiveReleaseIntegration(
   );
 }
 
+function objectiveVerifyDependencyInstallCommand(
+  worktreePath: string,
+  detected: DetectedPackageCommands,
+): { cmd: string; args: string[] } | null {
+  const installed = (marker: string): boolean =>
+    existsSync(join(worktreePath, 'node_modules', marker));
+  if (detected.packageManager === 'pnpm') {
+    if (installed('.modules.yaml')) return null;
+    return {
+      cmd: 'corepack',
+      args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+    };
+  }
+  if (detected.packageManager === 'yarn') {
+    if (installed('.yarn-state.yml') || installed('.yarn-integrity')) return null;
+    return { cmd: 'yarn', args: ['install', '--frozen-lockfile'] };
+  }
+  if (!existsSync(join(worktreePath, 'package-lock.json'))) return null;
+  if (installed('.package-lock.json')) return null;
+  return { cmd: 'npm', args: ['ci'] };
+}
+
+async function defaultVerifyDependencyRunner(
+  cmd: string,
+  args: string[],
+  cwd: string,
+): Promise<ChildVerifyCommandResult> {
+  const resolved = resolveCommandForExecFile(cmd, args);
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      resolved.command,
+      resolved.args,
+      {
+        cwd,
+        timeout: 15 * 60_000,
+        maxBuffer: 10 * 1024 * 1024,
+        windowsHide: true,
+        ...(resolved.windowsVerbatimArguments !== undefined
+          ? { windowsVerbatimArguments: resolved.windowsVerbatimArguments }
+          : {}),
+      },
+    );
+    return {
+      ok: true,
+      code: 0,
+      output: `${stdout.toString()}${stderr.toString()}`,
+    };
+  } catch (err) {
+    const e = err as {
+      code?: unknown;
+      signal?: unknown;
+      stdout?: Buffer | string;
+      stderr?: Buffer | string;
+      message?: string;
+    };
+    const stdout = e.stdout?.toString() ?? '';
+    const stderr = e.stderr?.toString() ?? '';
+    return {
+      ok: false,
+      code: typeof e.code === 'number' ? e.code : null,
+      ...(typeof e.signal === 'string' ? { signal: e.signal } : {}),
+      output: `${stdout}${stderr}${e.message ?? ''}`,
+    };
+  }
+}
+
 /**
  * Cycle 5242ca92 — on `--resume`, the cycle directory already holds the
  * authoritative plan.json (e.g. the epic decomposer's wave-layered children,
@@ -717,6 +790,11 @@ export interface CycleRunnerOptions {
    * kill switch when the corresponding flag is true.
    */
   preVerifyTypeCheck?: (cwd: string, testing: CycleConfig['testing']) => Promise<PreVerifyTypeCheckResult>;
+  /**
+   * Objective VERIFY dependency provisioning command runner. Production uses
+   * execFile; tests inject a mock so no package-manager command runs.
+   */
+  verifyDependencyRunner?: ChildVerifyCommandRunner;
   /**
    * Optional branch-level verifier for prMode='multi'. Production defaults to
    * checking each recorded agent branch in an isolated temporary git worktree.
@@ -1922,6 +2000,10 @@ export class CycleRunner {
     // Run the project's real test command, derive a TestResult, then check
     // the kill switch's post-verify gate (test floor + regression policy).
     // ─────────────────────────────────────────────────────────────────
+    const verifyCwd = this.resolveObjectiveVerifyCwd();
+    if (verifyCwd !== undefined) {
+      await this.provisionObjectiveVerifyDependencies(verifyCwd);
+    }
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
       status: 'running',
@@ -1932,8 +2014,12 @@ export class CycleRunner {
       cycleId: this.cycleId,
       step: 'tests-started',
       detail: this.options.config.testing.command,
+      ...(verifyCwd !== undefined ? { verifyCwd } : {}),
     });
-    const testResult = await this.options.testRunner.run(this.cycleId);
+    const testResult =
+      verifyCwd !== undefined
+        ? await this.options.testRunner.run(this.cycleId, verifyCwd)
+        : await this.options.testRunner.run(this.cycleId);
     this.logger.logTestRun(testResult);
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
@@ -1956,6 +2042,7 @@ export class CycleRunner {
       failed: testResult.failed,
       total: testResult.total,
       passRate: testResult.passRate,
+      ...(verifyCwd !== undefined ? { verifyCwd } : {}),
     });
     this.testStats = {
       passed: testResult.passed,
@@ -2465,6 +2552,41 @@ export class CycleRunner {
       ...(result.typeCheckError !== undefined ? { error: result.typeCheckError } : {}),
     });
     if (typeCheckTrip) throw new CycleKilledError(typeCheckTrip);
+  }
+
+  private resolveObjectiveVerifyCwd(): string | undefined {
+    if (this.options.objective === undefined || this.epicIntegration === null) {
+      return undefined;
+    }
+    return integrationWorktreePathFor(this.options.cwd, this.epicIntegration.branch);
+  }
+
+  private async provisionObjectiveVerifyDependencies(verifyCwd: string): Promise<void> {
+    const detected = detectPackageCommands(verifyCwd);
+    const install = objectiveVerifyDependencyInstallCommand(verifyCwd, detected);
+    if (install === null) return;
+
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: 'dependencies-started',
+      detail: `${install.cmd} ${install.args.join(' ')}`,
+      verifyCwd,
+    });
+
+    const runner = this.options.verifyDependencyRunner ?? defaultVerifyDependencyRunner;
+    const result = await runner(install.cmd, install.args, verifyCwd);
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: result.ok ? 'dependencies-complete' : 'dependencies-failed',
+      detail: `${install.cmd} ${install.args.join(' ')}`,
+      verifyCwd,
+    });
+    if (result.ok) return;
+
+    const tail = result.output.trim().slice(-2000);
+    throw new Error(
+      `objective verify dependency provisioning failed (${install.cmd} ${install.args.join(' ')}): ${tail}`,
+    );
   }
 
   private async verifyMultiPrBranches(): Promise<void> {

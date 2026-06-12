@@ -662,6 +662,158 @@ describe('CycleRunner', () => {
     });
   });
 
+  it('objective verify provisions and runs tests inside the integration worktree cwd', async () => {
+    await initGitRepo(tmpDir);
+    await execFileAsync('git', ['branch', 'codex/epic-test', 'main'], { cwd: tmpDir });
+
+    const deps = makeMockDeps();
+    const verifyCwd = join(tmpDir, '.agentforge', 'worktrees', 'int-codex-epic-test');
+    mkdirSync(verifyCwd, { recursive: true });
+    writeFileSync(join(verifyCwd, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n');
+
+    const calls: string[] = [];
+    const verifyEvents: any[] = [];
+    deps.bus.subscribe('sprint.phase.verify.step', (event: any) => {
+      verifyEvents.push(event);
+    });
+
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        result: {
+          phase: 'execute',
+          status: 'completed',
+          durationMs: 500,
+          costUsd: 1.0,
+          agentRuns: [],
+          itemResults: [],
+          epicIntegration: {
+            branch: 'codex/epic-test',
+            epicId: 'epic-test',
+            mergedBranches: ['codex/c1'],
+            hadConflicts: false,
+          },
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+
+    const verifyDependencyRunner = vi.fn(async (cmd: string, args: string[], cwd: string) => {
+      calls.push(`deps:${cwd}:${cmd} ${args.join(' ')}`);
+      mkdirSync(join(cwd, 'node_modules'), { recursive: true });
+      writeFileSync(join(cwd, 'node_modules', '.modules.yaml'), 'installed\n');
+      return { ok: true, code: 0, output: 'installed' };
+    });
+    deps.testRunner.run = vi.fn(async (cycleId: string, cwd?: string) => {
+      calls.push(`run:${cwd ?? ''}`);
+      return {
+        passed: 100,
+        failed: 0,
+        skipped: 0,
+        total: 100,
+        passRate: 1.0,
+        durationMs: 5000,
+        failedTests: [],
+        newFailures: [],
+        rawOutputPath: `.agentforge/cycles/${cycleId}/tests-raw.log`,
+        exitCode: 0,
+        ...(cwd !== undefined ? { verifyCwd: cwd } : {}),
+      };
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      objective: 'ship the epic',
+      worktreePool: { listActive: async () => [] } as any,
+      verifyDependencyRunner,
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(verifyDependencyRunner).toHaveBeenCalledWith(
+      'corepack',
+      ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+      verifyCwd,
+    );
+    expect(deps.testRunner.run).toHaveBeenCalledWith(expect.any(String), verifyCwd);
+    expect(calls).toEqual([
+      `deps:${verifyCwd}:corepack pnpm install --frozen-lockfile --prefer-offline`,
+      `run:${verifyCwd}`,
+    ]);
+    expect(
+      verifyEvents
+        .filter((event) => event.step.startsWith('dependencies-') || event.step.startsWith('tests-'))
+        .every((event) => event.verifyCwd === verifyCwd),
+    ).toBe(true);
+  });
+
+  it('legacy verify still calls the test runner without an explicit cwd', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    const baseExecute = deps.mockPhaseHandlers.execute;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      writeFileSync(join(tmpDir, 'feature.txt'), 'implemented\n');
+      await baseExecute(ctx);
+    };
+
+    const runCalls: unknown[][] = [];
+    const verifyEvents: any[] = [];
+    deps.bus.subscribe('sprint.phase.verify.step', (event: any) => {
+      verifyEvents.push(event);
+    });
+    deps.testRunner.run = vi.fn(async (...args: [string, string?]) => {
+      runCalls.push(args);
+      const cycleId = args[0];
+      return {
+        passed: 100,
+        failed: 0,
+        skipped: 0,
+        total: 100,
+        passRate: 1.0,
+        durationMs: 5000,
+        failedTests: [],
+        newFailures: [],
+        rawOutputPath: `.agentforge/cycles/${cycleId}/tests-raw.log`,
+        exitCode: 0,
+      };
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(runCalls).toHaveLength(1);
+    expect(runCalls[0]).toHaveLength(1);
+    expect(verifyEvents.some((event) => 'verifyCwd' in event)).toBe(false);
+  });
+
   it('ignores a provided worktree pool when worktrees are disabled', async () => {
     await initGitRepo(tmpDir);
     const deps = makeMockDeps();
