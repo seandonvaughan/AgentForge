@@ -198,11 +198,32 @@ Written at cycle completion (learn phase). Reconciles planned vs actual cost per
 
 ### `cycle-ledger.jsonl`
 
-Appended for every completed cycle (objective and non-objective alike). One JSON line per cycle. Feeds the cost-priors calibration flywheel so future plans on this repo use observed actuals rather than static estimates:
+Recorded for every completed cycle (objective and non-objective alike). The ledger is idempotent by `cycleId`: a failed cycle that later resumes rewrites the final row for that cycle instead of leaving duplicate rows. The ledger feeds the cost-priors calibration flywheel so future plans on this repo use observed actuals rather than static estimates:
 
 ```jsonl
 {"schemaVersion":1,"cycleId":"abc-123","epicId":"epic-abc123","objective":"Add per-agent cost tracking","budgetUsd":50,"totalUsd":31.42,"utilization":0.63,"executionUsd":26.18,"overheadUsd":5.24,"items":{"planned":6,"completed":6,"failed":0},"completedAt":"2026-06-10T14:22:00Z"}
 ```
+
+### Resume durability and verification
+
+Objective resume uses two durable checkpoints:
+
+- `checkpoint-cycle.json` stores cycle-phase progress. On resume, AgentForge loads and merges the existing checkpoint before writing any new phase state; if resume startup fails, the existing file is preserved byte-for-byte instead of being replaced by a partial checkpoint.
+- `checkpoint-execute.json` stores execute-phase item progress. Completed items retain their `costUsd` and `agentId` metadata, and legacy checkpoints without those fields still deserialize.
+
+When a resumed cycle skips items that completed in a prior attempt, the restored item costs are included in `phases/execute.json` and in `spend-report.json` `perItem[].actualUsd`. Operators troubleshooting a resume should expect previously completed children to keep their actual spend in the dashboard Spend tab and the v5 spend-report API rather than showing `$0.00`.
+
+Stage 4 verification for objective cycles runs in the epic integration worktree, not in a child worktree or the operator's shell cwd. Before verification, AgentForge provisions that integration worktree with `corepack pnpm install --frozen-lockfile --prefer-offline`. The verification result is written to `tests.json` with a concrete `verifyCwd` field, for example:
+
+```json
+{
+  "ok": true,
+  "verifyCwd": "/repo/.agentforge/worktrees/int-codex-epic-abc123",
+  "commands": ["corepack pnpm exec tsc -b --pretty false"]
+}
+```
+
+Use `tests.json.verifyCwd` when diagnosing missing dependencies, unexpected path-sensitive failures, or a mismatch between child worktree output and the final integration branch.
 
 ---
 
