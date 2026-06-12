@@ -97,6 +97,7 @@ export { parseCommandArgs } from './subprocess-command.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { buildVerificationSubprocessEnv } from './verification-env.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
+import { getCompletedExecuteItems } from './checkpoint.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
 import { resolveTelemetryConfig } from '../telemetry/config.js';
 // T4.6 — WorktreeGc: schedule GC at cycle start (clean stale worktrees) and
@@ -114,6 +115,7 @@ import {
   readLessonAttributions,
 } from '../memory/lesson-attribution.js';
 import type { TestResult } from './types.js';
+import type { ExecuteCheckpointItemRecord } from './types.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -610,6 +612,57 @@ export function tryLoadExistingPlanForResume(
     // missing or malformed — caller falls back to regeneration
   }
   return null;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function objectRows(value: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter(isObjectRecord);
+}
+
+function finiteNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function sumItemRowCosts(rows: Array<Record<string, unknown>>): number {
+  return rows.reduce(
+    (total, row) => total + (finiteNonNegativeNumber(row['costUsd']) ? row['costUsd'] : 0),
+    0,
+  );
+}
+
+function applyRestoredExecuteItemCosts(
+  rows: Array<Record<string, unknown>> | null,
+  restoredItems: Record<string, ExecuteCheckpointItemRecord>,
+): boolean {
+  if (rows === null) return false;
+  let changed = false;
+  for (const row of rows) {
+    const itemId = typeof row['itemId'] === 'string' ? row['itemId'] : undefined;
+    if (itemId === undefined) continue;
+    const restored = restoredItems[itemId];
+    if (restored === undefined || restored.costUsd <= 0) continue;
+
+    const currentCost = row['costUsd'];
+    const shouldRestoreCost =
+      !finiteNonNegativeNumber(currentCost) || currentCost === 0;
+    if (shouldRestoreCost) {
+      row['costUsd'] = restored.costUsd;
+      changed = true;
+    }
+    if (typeof row['agentId'] !== 'string' || row['agentId'].length === 0) {
+      row['agentId'] = restored.agentId;
+      changed = true;
+    }
+    if (shouldRestoreCost && row['restoredFromCheckpoint'] !== true) {
+      row['restoredFromCheckpoint'] = true;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -1750,6 +1803,7 @@ export class CycleRunner {
       try {
         runSummary = await scheduler.run();
         this.totalCostUsd += runSummary.totalCostUsd;
+        this.restoreResumeExecuteCosts(runSummary);
         // P0.4 — KEYSTONE: capture the epic integration signal from the execute
         // phase result. When present, the release stage below pushes this ONE
         // integration branch and opens ONE PR from it instead of committing to
@@ -2709,6 +2763,62 @@ export class CycleRunner {
       }
     }
     return total;
+  }
+
+  private restoreResumeExecuteCosts(runSummary: SprintRunSummary): void {
+    if (!this.options.resumeCheckpoint) return;
+
+    const restoredItems = getCompletedExecuteItems(this.options.cwd, this.cycleId);
+    if (!Object.values(restoredItems).some((item) => item.costUsd > 0)) return;
+
+    const executePhase = runSummary.completedPhases.find((p) => p.phase === 'execute');
+    if (executePhase !== undefined) {
+      const itemRows = objectRows(executePhase.itemResults);
+      const agentRows = objectRows(executePhase.agentRuns);
+      const changedItems = applyRestoredExecuteItemCosts(itemRows, restoredItems);
+      const changedAgents = applyRestoredExecuteItemCosts(agentRows, restoredItems);
+      const primaryRows = itemRows ?? agentRows;
+      if (primaryRows !== null && (changedItems || changedAgents)) {
+        executePhase.costUsd = Math.max(executePhase.costUsd, sumItemRowCosts(primaryRows));
+      }
+    }
+
+    this.restoreResumeExecuteCostsOnDisk(restoredItems);
+  }
+
+  private restoreResumeExecuteCostsOnDisk(
+    restoredItems: Record<string, ExecuteCheckpointItemRecord>,
+  ): void {
+    const execPath = join(
+      this.options.cwd,
+      '.agentforge/cycles',
+      this.cycleId,
+      'phases',
+      'execute.json',
+    );
+    if (!existsSync(execPath)) return;
+
+    try {
+      const parsed = JSON.parse(readFileSync(execPath, 'utf8')) as unknown;
+      if (!isObjectRecord(parsed)) return;
+      const itemRows = objectRows(parsed['itemResults']);
+      const agentRows = objectRows(parsed['agentRuns']);
+      const changedItems = applyRestoredExecuteItemCosts(itemRows, restoredItems);
+      const changedAgents = applyRestoredExecuteItemCosts(agentRows, restoredItems);
+      const primaryRows = itemRows ?? agentRows;
+      if (primaryRows !== null && (changedItems || changedAgents)) {
+        const restoredCostUsd = sumItemRowCosts(primaryRows);
+        const currentCost = parsed['costUsd'];
+        parsed['costUsd'] = finiteNonNegativeNumber(currentCost)
+          ? Math.max(currentCost, restoredCostUsd)
+          : restoredCostUsd;
+      }
+      if (changedItems || changedAgents) {
+        writeFileSync(execPath, JSON.stringify(parsed, null, 2), 'utf8');
+      }
+    } catch {
+      // Best-effort: restored accounting should not change the cycle outcome.
+    }
   }
 
   /**
