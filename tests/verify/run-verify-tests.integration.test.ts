@@ -82,4 +82,27 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     expect(report.numTotalTests).toBeGreaterThanOrEqual(1);
     expect(report.numPassedTests).toBe(report.numTotalTests);
   });
+
+  it('honors memory and worker floor overrides in the verify gate', () => {
+    const res = spawnSync(process.execPath, [RUNNER], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        AGENTFORGE_CHANGED_FILES: '',
+        AGENTFORGE_VERIFY_SUMMARY_DIR: fixture,
+        AGENTFORGE_VERIFY_AVAILABLE_GB: '0.1',
+        AGENTFORGE_VERIFY_MIN_WORKERS: '2',
+      },
+    });
+
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toContain('availableSource=env:AGENTFORGE_VERIFY_AVAILABLE_GB');
+    const summary = JSON.parse(readFileSync(join(fixture, 'verify-gate-summary.json'), 'utf8'));
+    expect(summary.baseWorkers).toBe(1);
+    expect(summary.minWorkers).toBe(2);
+    expect(summary.workers).toBe(2);
+    expect(summary.availableMemoryGb).toBe(0.1);
+    expect(summary.availableMemorySource).toBe('env:AGENTFORGE_VERIFY_AVAILABLE_GB');
+  });
 });

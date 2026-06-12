@@ -76,6 +76,9 @@ describe('vitest config coverage', () => {
     // The include array must contain a glob that matches tests/**/*.test.ts
     // (which is how vitest.config.ts is currently authored).
     expect(vitestConfig).toContain("'tests/**/*.test.ts'");
+    // Child verification can directly invoke changed .test.mjs files, so the
+    // root Vitest config must collect those too.
+    expect(vitestConfig).toContain("'tests/**/*.test.mjs'");
   });
 
   it('vitest.config.ts exclude patterns do NOT exclude tests/integration/', () => {

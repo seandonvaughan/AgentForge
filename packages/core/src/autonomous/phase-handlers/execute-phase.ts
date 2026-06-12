@@ -16,7 +16,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { execFile } from 'node:child_process';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -391,6 +391,129 @@ export function extractFilesFromItem(item: {
   const matches = haystack.match(regex);
   if (!matches) return [];
   return Array.from(new Set(matches));
+}
+
+export type PlanScopeValidationMode = 'off' | 'warn' | 'enforce';
+
+export interface DeclaredScopeNormalization {
+  mode: PlanScopeValidationMode;
+  files: string[];
+  invalid: string[];
+  replacements: Array<{ from: string; to: string; reason: 'missing-path' }>;
+}
+
+function normalizeScopePath(file: string): string {
+  return file.split('\\').join('/').replace(/^\.\//, '').trim();
+}
+
+function isInsideRoot(rootAbs: string, targetAbs: string): boolean {
+  const rel = relative(rootAbs, targetAbs);
+  return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function relativeScopePath(rootAbs: string, targetAbs: string): string {
+  return relative(rootAbs, targetAbs).split('\\').join('/');
+}
+
+function realpathIfExists(path: string): string | null {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return null;
+  }
+}
+
+function closestExistingScope(projectRoot: string, file: string): string | null {
+  const rootAbs = resolve(projectRoot);
+  const rootReal = realpathIfExists(rootAbs) ?? rootAbs;
+  const targetAbs = resolve(projectRoot, file);
+  if (!isInsideRoot(rootAbs, targetAbs)) return null;
+  if (existsSync(targetAbs)) {
+    const targetReal = realpathIfExists(targetAbs);
+    if (!targetReal || !isInsideRoot(rootReal, targetReal)) return null;
+    return normalizeScopePath(file);
+  }
+
+  const parentAbs = dirname(targetAbs);
+  if (!isInsideRoot(rootAbs, parentAbs) || !existsSync(parentAbs)) return null;
+  const parentReal = realpathIfExists(parentAbs);
+  if (!parentReal || !isInsideRoot(rootReal, parentReal)) return null;
+  const rel = relativeScopePath(rootAbs, parentAbs);
+  return rel.length > 0 ? rel : normalizeScopePath(file);
+}
+
+function planScopeValidationMode(env: NodeJS.ProcessEnv = process.env): PlanScopeValidationMode {
+  const raw = (env.AF_PLAN_SCOPE_VALIDATION ?? 'warn').toLowerCase();
+  if (raw === 'off' || raw === 'warn' || raw === 'enforce') return raw;
+  return 'warn';
+}
+
+/**
+ * Plan items are LLM-authored and can name plausible-but-nonexistent files
+ * (for example React App.tsx paths in this Svelte dashboard). The child
+ * verifier treats item.files as an enforced allow-list, so stale leaf paths make
+ * useful work impossible. In warn mode, replace missing leaves with the closest
+ * existing repo-local directory. Enforce mode records the same diagnostics so
+ * callers can fail the item before dispatch.
+ */
+export function normalizeDeclaredFileScopes(
+  projectRoot: string,
+  files: string[],
+  mode: PlanScopeValidationMode = planScopeValidationMode(),
+): DeclaredScopeNormalization {
+  const original = files
+    .filter((f): f is string => typeof f === 'string')
+    .map(normalizeScopePath)
+    .filter((f) => f.length > 0);
+  const pushUnique = (out: string[], file: string): void => {
+    if (!out.includes(file)) out.push(file);
+  };
+  if (mode === 'off') {
+    const unique: string[] = [];
+    for (const file of original) pushUnique(unique, file);
+    return { mode, files: unique, invalid: [], replacements: [] };
+  }
+
+  const normalized: string[] = [];
+  const invalid: string[] = [];
+  const replacements: DeclaredScopeNormalization['replacements'] = [];
+  const rootAbs = resolve(projectRoot);
+
+  for (const file of original) {
+    const targetAbs = resolve(projectRoot, file);
+    if (!isInsideRoot(rootAbs, targetAbs)) {
+      invalid.push(file);
+      continue;
+    }
+    if (existsSync(targetAbs)) {
+      pushUnique(normalized, file);
+      continue;
+    }
+    const replacement = closestExistingScope(projectRoot, file);
+    if (replacement) {
+      pushUnique(normalized, replacement);
+      if (replacement !== file) {
+        replacements.push({ from: file, to: replacement, reason: 'missing-path' });
+      }
+    } else {
+      invalid.push(file);
+    }
+  }
+
+  return { mode, files: normalized, invalid, replacements };
+}
+
+function formatScopeNormalizationError(scope: DeclaredScopeNormalization): string {
+  const parts: string[] = [];
+  if (scope.invalid.length > 0) {
+    parts.push(`invalid paths: ${scope.invalid.join(', ')}`);
+  }
+  if (scope.replacements.length > 0) {
+    parts.push(
+      `missing paths: ${scope.replacements.map((r) => `${r.from} -> ${r.to}`).join(', ')}`,
+    );
+  }
+  return `Declared scope validation failed before dispatch (${parts.join('; ')}).`;
 }
 
 /**
@@ -1220,7 +1343,25 @@ export async function runExecutePhase(
   // maxParallelism.
   const lockMgr = new FileLockManager();
   const itemFiles = new Map<string, string[]>();
-  for (const it of items) itemFiles.set(it.id, extractFilesFromItem(it));
+  const itemScopeDiagnostics = new Map<string, DeclaredScopeNormalization>();
+  for (const it of items) {
+    const scope = normalizeDeclaredFileScopes(ctx.projectRoot, extractFilesFromItem(it));
+    itemScopeDiagnostics.set(it.id, scope);
+    itemFiles.set(it.id, scope.files);
+    if (scope.mode !== 'off' && (scope.replacements.length > 0 || scope.invalid.length > 0)) {
+      it.files = scope.files;
+      ctx.bus.publish('execute.item.scope-normalized', {
+        sprintId: ctx.sprintId,
+        phase,
+        cycleId: ctx.cycleId,
+        itemId: it.id,
+        mode: scope.mode,
+        files: scope.files,
+        invalid: scope.invalid,
+        replacements: scope.replacements,
+      });
+    }
+  }
 
   const dispatchItem = async (item: SprintItem): Promise<ItemResult> => {
     const itemStartedAt = Date.now();
@@ -1251,6 +1392,34 @@ export async function runExecutePhase(
     try {
       writeFileSync(sprintPath, JSON.stringify(sprintFile, null, 2));
     } catch { /* non-fatal */ }
+
+    const scopeDiagnostic = itemScopeDiagnostics.get(item.id);
+    if (
+      scopeDiagnostic !== undefined &&
+      (
+        scopeDiagnostic.invalid.length > 0 ||
+        (scopeDiagnostic.mode === 'enforce' && scopeDiagnostic.replacements.length > 0)
+      )
+    ) {
+      const error = formatScopeNormalizationError(scopeDiagnostic);
+      const failedResult: ItemResult = {
+        itemId: item.id,
+        status: 'failed',
+        failureClass: 'scope',
+        costUsd: 0,
+        durationMs: Date.now() - itemStartedAt,
+        response: '',
+        attempts: 0,
+        error,
+        agentId: item.assignee,
+        startedAt: itemStartedAtIso,
+      };
+      item.status = 'failed';
+      liveResults.set(item.id, failedResult);
+      enqueueItemCheckpoint(item.id, 'failed', item.assignee);
+      snapshotExecuteProgress();
+      return failedResult;
+    }
 
     // T4.2: allocate a worktree ONCE per item (before the retry loop) so all
     // retry attempts reuse the same isolated branch.  Released in the item-level
@@ -2429,9 +2598,9 @@ export function buildItemPrompt(
   const scopeSec =
     declaredFiles.length > 0
       ? `\n## Declared file scope — ENFORCED by a deterministic verifier
-This item declares exactly these files:
+This item declares exactly these file or directory scopes:
 ${declaredFiles.map((f) => `- ${f}`).join('\n')}
-Edit ONLY these files (creating a declared file is fine). A change to ANY other file fails this item automatically. If the task truly cannot be completed without touching an undeclared file, STOP and report the blocker instead of editing it.\n`
+Edit ONLY these paths. If a scope is a directory, keep all edits under that directory; creating a declared file or a file under a declared directory is fine. A change outside these paths fails this item automatically. If the task truly cannot be completed without touching an undeclared path, STOP and report the blocker instead of editing it.\n`
       : '';
   const base = `${gateRetrySec}You are working on sprint item "${item.title}" in the repository at ${cwd}.
 

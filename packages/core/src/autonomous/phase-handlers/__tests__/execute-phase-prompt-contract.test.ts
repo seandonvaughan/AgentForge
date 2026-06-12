@@ -35,7 +35,7 @@ function makeBus() {
   };
 }
 
-function writeSprintFile() {
+function writeSprintFile(itemOverrides: Record<string, unknown> = {}) {
   const data = {
     version: '1.0.0',
     sprintId: 'sprint-pc-1',
@@ -47,6 +47,7 @@ function writeSprintFile() {
         status: 'planned',
         tags: ['typescript'],
         description: 'Add a small logging helper.',
+        ...itemOverrides,
       },
     ],
   };
@@ -67,8 +68,8 @@ function makeCtx(runtime: unknown): PhaseContext {
   } as PhaseContext;
 }
 
-async function capturePrompt(): Promise<string> {
-  writeSprintFile();
+async function capturePrompt(itemOverrides: Record<string, unknown> = {}): Promise<string> {
+  writeSprintFile(itemOverrides);
   const runtime = { run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01 }) };
   await runExecutePhase(makeCtx(runtime), {
     maxParallelism: 1,
@@ -99,5 +100,71 @@ describe('execute-phase agent prompt contract', () => {
     // type-check requirement itself, not one package manager's spelling.
     expect(prompt).toContain('tsc');
     expect(prompt).toContain('--noEmit');
+  });
+
+  it('normalizes nonexistent planned leaf files to existing directory scopes before dispatch', async () => {
+    mkdirSync(join(tmpRoot, 'packages', 'dashboard', 'src'), { recursive: true });
+
+    const prompt = await capturePrompt({
+      files: ['packages/dashboard/src/App.tsx', 'packages/dashboard/src/api.ts'],
+    });
+
+    expect(prompt).toContain('- packages/dashboard/src');
+    expect(prompt).not.toContain('packages/dashboard/src/App.tsx');
+    expect(prompt).not.toContain('packages/dashboard/src/api.ts');
+  });
+
+  it('fails invalid declared scopes before invoking the runtime', async () => {
+    writeSprintFile({ files: ['../outside.ts'] });
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01 }) };
+
+    const result = await runExecutePhase(makeCtx(runtime), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+    });
+
+    expect(runtime.run).not.toHaveBeenCalled();
+    const [item] = (result.itemResults ?? []) as Array<{
+      status: string;
+      failureClass?: string;
+      error?: string;
+    }>;
+    expect(item?.status).toBe('failed');
+    expect(item?.failureClass).toBe('scope');
+    expect(item?.error).toContain('Declared scope validation failed before dispatch');
+  });
+
+  it('enforce mode fails before dispatch when a missing leaf would be widened', async () => {
+    mkdirSync(join(tmpRoot, 'packages', 'dashboard', 'src'), { recursive: true });
+    writeSprintFile({ files: ['packages/dashboard/src/App.tsx'] });
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01 }) };
+    const prior = process.env.AF_PLAN_SCOPE_VALIDATION;
+    process.env.AF_PLAN_SCOPE_VALIDATION = 'enforce';
+    try {
+      const result = await runExecutePhase(makeCtx(runtime), {
+        maxParallelism: 1,
+        maxItemRetries: 0,
+        disableWorktrees: true,
+        selfEvalDisabled: true,
+      });
+
+      expect(runtime.run).not.toHaveBeenCalled();
+      const [item] = (result.itemResults ?? []) as Array<{
+        status: string;
+        failureClass?: string;
+        error?: string;
+      }>;
+      expect(item?.status).toBe('failed');
+      expect(item?.failureClass).toBe('scope');
+      expect(item?.error).toContain('packages/dashboard/src/App.tsx -> packages/dashboard/src');
+    } finally {
+      if (prior === undefined) {
+        delete process.env.AF_PLAN_SCOPE_VALIDATION;
+      } else {
+        process.env.AF_PLAN_SCOPE_VALIDATION = prior;
+      }
+    }
   });
 });

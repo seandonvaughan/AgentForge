@@ -16,7 +16,7 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
-    include: ['tests/**/*.test.ts', 'packages/**/__tests__/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.mjs', 'packages/**/__tests__/*.test.ts'],
     exclude: ['tests/e2e/**/*.test.ts', '**/node_modules/**'],
     // Real-git / subprocess tests (worktree pool, multi-PR cycle, external-repo
     // smoke) are fast in isolation but can starve under maximum full-suite

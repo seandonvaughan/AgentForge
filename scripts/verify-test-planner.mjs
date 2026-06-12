@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * verify-test-planner.mjs — pure planning functions for the autonomous-cycle
  * VERIFY gate. No I/O, no process state: every function is a deterministic

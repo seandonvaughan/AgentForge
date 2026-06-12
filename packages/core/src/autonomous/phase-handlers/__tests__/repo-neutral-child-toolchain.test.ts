@@ -19,7 +19,7 @@ import {
   verifyChildWorktree,
   type ChildVerifyCommandResult,
 } from '../child-verify.js';
-import { buildItemPrompt } from '../execute-phase.js';
+import { buildItemPrompt, normalizeDeclaredFileScopes } from '../execute-phase.js';
 
 /** The (module-local) SprintItem shape buildItemPrompt accepts. */
 type PromptItem = Parameters<typeof buildItemPrompt>[0];
@@ -236,12 +236,97 @@ describe('buildItemPrompt — repo-neutral tooling + declared scope', () => {
     expect(prompt).toContain('Declared file scope — ENFORCED');
     expect(prompt).toContain('- src/budget.ts');
     expect(prompt).toContain('- tests/budget.test.ts');
-    expect(prompt).toContain('Edit ONLY these files');
+    expect(prompt).toContain('Edit ONLY these paths');
   });
 
   it('no declared files → no scope section (legacy items unchanged)', () => {
     const prompt = buildItemPrompt(makeItem({ files: [] }), dir);
     expect(prompt).not.toContain('Declared file scope');
+  });
+});
+
+describe('normalizeDeclaredFileScopes', () => {
+  it('replaces missing leaf files with the closest existing directory scope', () => {
+    mkdirSync(join(dir, 'packages', 'dashboard', 'src', '__tests__'), { recursive: true });
+
+    const scope = normalizeDeclaredFileScopes(dir, [
+      'packages/dashboard/src/App.tsx',
+      'packages/dashboard/src/api.ts',
+      'packages/dashboard/src/__tests__/App.test.tsx',
+    ]);
+
+    expect(scope.mode).toBe('warn');
+    expect(scope.files).toEqual([
+      'packages/dashboard/src',
+      'packages/dashboard/src/__tests__',
+    ]);
+    expect(scope.replacements).toEqual([
+      {
+        from: 'packages/dashboard/src/App.tsx',
+        to: 'packages/dashboard/src',
+        reason: 'missing-path',
+      },
+      {
+        from: 'packages/dashboard/src/api.ts',
+        to: 'packages/dashboard/src',
+        reason: 'missing-path',
+      },
+      {
+        from: 'packages/dashboard/src/__tests__/App.test.tsx',
+        to: 'packages/dashboard/src/__tests__',
+        reason: 'missing-path',
+      },
+    ]);
+  });
+
+  it('does not broaden completely invalid or out-of-repo paths to the repo root', () => {
+    const scope = normalizeDeclaredFileScopes(dir, [
+      'missing/deep/file.ts',
+      '../outside.ts',
+    ]);
+
+    expect(scope.files).toEqual([]);
+    expect(scope.invalid).toEqual(['missing/deep/file.ts', '../outside.ts']);
+  });
+
+  it('does not climb past the immediate parent of a missing planned file', () => {
+    mkdirSync(join(dir, 'packages', 'dashboard'), { recursive: true });
+
+    const scope = normalizeDeclaredFileScopes(dir, [
+      'packages/dashboard/src/components/App.tsx',
+    ]);
+
+    expect(scope.files).toEqual([]);
+    expect(scope.invalid).toEqual(['packages/dashboard/src/components/App.tsx']);
+    expect(scope.replacements).toEqual([]);
+  });
+
+  it('keeps a missing root-level file as an exact file scope', () => {
+    const scope = normalizeDeclaredFileScopes(dir, ['new-root-file.ts']);
+
+    expect(scope.files).toEqual(['new-root-file.ts']);
+    expect(scope.invalid).toEqual([]);
+    expect(scope.replacements).toEqual([]);
+  });
+
+  it('records replacements but keeps them blocking in enforce mode', () => {
+    mkdirSync(join(dir, 'packages', 'dashboard', 'src'), { recursive: true });
+
+    const scope = normalizeDeclaredFileScopes(
+      dir,
+      ['packages/dashboard/src/App.tsx'],
+      'enforce',
+    );
+
+    expect(scope.mode).toBe('enforce');
+    expect(scope.files).toEqual(['packages/dashboard/src']);
+    expect(scope.replacements).toEqual([
+      {
+        from: 'packages/dashboard/src/App.tsx',
+        to: 'packages/dashboard/src',
+        reason: 'missing-path',
+      },
+    ]);
   });
 });
 
