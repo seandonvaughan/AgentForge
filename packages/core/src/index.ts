@@ -25,6 +25,7 @@ export * from './agent-versioning/index.js';
 export * from './federation/index.js';
 export * from './resilience/index.js';
 export * from './autonomous/index.js';
+export * from './server.js';
 export * from './memory/index.js';
 // W7 — Claude Code agent mirrors (re-emitted by `agentforge claude setup`).
 export {
