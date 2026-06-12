@@ -69,6 +69,35 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
     expect(result.rawOutputPath).toMatch(/\.log$/);
   });
 
+  it('uses an explicit verify cwd for the child process and serialized result', async () => {
+    const { execFile } = await import('node:child_process');
+    const verifyCwd = mkdtempSync(join(tmpdir(), 'agentforge-rtr-verify-'));
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+
+    try {
+      const result = await runner.run(cycleId, verifyCwd);
+
+      const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const [, , opts] = calls.at(-1)!;
+      expect((opts as { cwd: string }).cwd).toBe(verifyCwd);
+      expect(result.verifyCwd).toBe(verifyCwd);
+      expect(JSON.parse(JSON.stringify(result)).verifyCwd).toBe(verifyCwd);
+    } finally {
+      rmSync(verifyCwd, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults the child process cwd to the constructor cwd when verify cwd is omitted', async () => {
+    const { execFile } = await import('node:child_process');
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+    const result = await runner.run(cycleId);
+
+    const calls = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const [, , opts] = calls.at(-1)!;
+    expect((opts as { cwd: string }).cwd).toBe(tmpDir);
+    expect(result.verifyCwd).toBe(tmpDir);
+  });
+
   it('computes newFailures against a prior snapshot', async () => {
     const priorSnapshot = {
       passed: 3,
