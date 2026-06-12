@@ -401,6 +401,111 @@ describe('CycleRunner', () => {
     expect(checkpointAtAuditStart.cycleId).toBe(result.cycleId);
   });
 
+  it('restores checkpointed execute item costs into resume phase output without double-counting totals', async () => {
+    await initGitRepo(tmpDir);
+    const deps = makeMockDeps();
+    const cycleId = '11111111-1111-4111-8111-111111111111';
+    const cycleDir = join(tmpDir, '.agentforge', 'cycles', cycleId);
+    mkdirSync(cycleDir, { recursive: true });
+    writeFileSync(
+      join(cycleDir, 'plan.json'),
+      JSON.stringify({
+        version: '6.3.6',
+        sprintId: 'sprint-resume-cost',
+        items: [
+          {
+            id: 'child-1',
+            title: 'Already done',
+            assignee: 'coder',
+            status: 'completed',
+            tags: ['fix'],
+            description: 'Completed before the resume.',
+          },
+          {
+            id: 'child-2',
+            title: 'Run after resume',
+            assignee: 'coder',
+            status: 'pending',
+            tags: ['fix'],
+            description: 'Runs in the resumed execute phase.',
+          },
+        ],
+      }),
+    );
+    writeFileSync(
+      join(cycleDir, 'checkpoint-execute.json'),
+      JSON.stringify({
+        cycleId,
+        phase: 'execute',
+        completedItemIds: ['child-1'],
+        currentItemId: null,
+        totalItems: 2,
+        lastUpdatedAt: '2026-06-11T00:00:00.000Z',
+        schemaVersion: 2,
+        items: {
+          'child-1': {
+            itemId: 'child-1',
+            status: 'completed',
+            costUsd: 1.25,
+            agentId: 'coder',
+            completedAt: '2026-06-11T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      await runExecutePhase(ctx, {
+        resume: true,
+        maxParallelism: 1,
+        maxItemRetries: 0,
+        disableWorktrees: true,
+        disableChildVerify: true,
+        selfEvalDisabled: true,
+      });
+    };
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+      resumeCheckpoint: {
+        v: 1,
+        cycleId,
+        capturedAt: '2026-06-11T00:00:00.000Z',
+        resumeFromPhase: 'execute',
+        completedPhases: ['audit', 'plan', 'assign'],
+        budgetUsd: DEFAULT_CYCLE_CONFIG.budget.perCycleUsd,
+        spentUsd: 3.5,
+      } as any,
+    });
+
+    const result = await runner.start();
+    const executeJson = JSON.parse(
+      readFileSync(join(cycleDir, 'phases', 'execute.json'), 'utf8'),
+    ) as { costUsd: number; itemResults: Array<Record<string, unknown>> };
+    const byId = new Map(executeJson.itemResults.map((row) => [row['itemId'], row]));
+
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(byId.get('child-1')).toMatchObject({
+      status: 'completed',
+      costUsd: 1.25,
+      agentId: 'coder',
+      restoredFromCheckpoint: true,
+    });
+    expect(byId.get('child-2')?.['costUsd']).toBe(0.01);
+    expect(executeJson.costUsd).toBeCloseTo(1.26, 5);
+    expect(result.cost.totalUsd).toBeCloseTo(4.41, 5);
+  });
+
   it('fails prMode=multi before planning when no worktree pool is available', async () => {
     const deps = makeMockDeps();
     const runner = new CycleRunner({
