@@ -80,7 +80,14 @@ import {
 import {
   pushIntegrationBranch,
   removeIntegrationWorktree,
+  integrationWorktreePathFor,
 } from './phase-handlers/wave-integration.js';
+import {
+  detectPackageCommands,
+  type ChildVerifyCommandResult,
+  type ChildVerifyCommandRunner,
+  type DetectedPackageCommands,
+} from './phase-handlers/child-verify.js';
 import { KillSwitch } from './kill-switch.js';
 import { CycleLogger } from './cycle-logger.js';
 import { renderPrBody } from './pr-body-renderer.js';
@@ -97,6 +104,7 @@ export { parseCommandArgs } from './subprocess-command.js';
 import { assertUnattendedSafe } from './audit/unattended-guard.js';
 import { buildVerificationSubprocessEnv } from './verification-env.js';
 import { mergeBreakdowns, type CostBreakdown } from './cost-breakdown.js';
+import { getCompletedExecuteItems } from './checkpoint.js';
 import { exportCycleTelemetry } from '../telemetry/cycle-telemetry-export.js';
 import { resolveTelemetryConfig } from '../telemetry/config.js';
 // T4.6 — WorktreeGc: schedule GC at cycle start (clean stale worktrees) and
@@ -114,6 +122,7 @@ import {
   readLessonAttributions,
 } from '../memory/lesson-attribution.js';
 import type { TestResult } from './types.js';
+import type { ExecuteCheckpointItemRecord } from './types.js';
 
 /**
  * Build a PR title that's safe for `gh pr create` and never truncated mid-word.
@@ -579,6 +588,72 @@ export function assertObjectiveReleaseIntegration(
   );
 }
 
+function objectiveVerifyDependencyInstallCommand(
+  worktreePath: string,
+  detected: DetectedPackageCommands,
+): { cmd: string; args: string[] } | null {
+  const installed = (marker: string): boolean =>
+    existsSync(join(worktreePath, 'node_modules', marker));
+  if (detected.packageManager === 'pnpm') {
+    if (installed('.modules.yaml')) return null;
+    return {
+      cmd: 'corepack',
+      args: ['pnpm', 'install', '--frozen-lockfile', '--prefer-offline'],
+    };
+  }
+  if (detected.packageManager === 'yarn') {
+    if (installed('.yarn-state.yml') || installed('.yarn-integrity')) return null;
+    return { cmd: 'yarn', args: ['install', '--frozen-lockfile'] };
+  }
+  if (!existsSync(join(worktreePath, 'package-lock.json'))) return null;
+  if (installed('.package-lock.json')) return null;
+  return { cmd: 'npm', args: ['ci'] };
+}
+
+async function defaultVerifyDependencyRunner(
+  cmd: string,
+  args: string[],
+  cwd: string,
+): Promise<ChildVerifyCommandResult> {
+  const resolved = resolveCommandForExecFile(cmd, args);
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      resolved.command,
+      resolved.args,
+      {
+        cwd,
+        timeout: 15 * 60_000,
+        maxBuffer: 10 * 1024 * 1024,
+        windowsHide: true,
+        ...(resolved.windowsVerbatimArguments !== undefined
+          ? { windowsVerbatimArguments: resolved.windowsVerbatimArguments }
+          : {}),
+      },
+    );
+    return {
+      ok: true,
+      code: 0,
+      output: `${stdout.toString()}${stderr.toString()}`,
+    };
+  } catch (err) {
+    const e = err as {
+      code?: unknown;
+      signal?: unknown;
+      stdout?: Buffer | string;
+      stderr?: Buffer | string;
+      message?: string;
+    };
+    const stdout = e.stdout?.toString() ?? '';
+    const stderr = e.stderr?.toString() ?? '';
+    return {
+      ok: false,
+      code: typeof e.code === 'number' ? e.code : null,
+      ...(typeof e.signal === 'string' ? { signal: e.signal } : {}),
+      output: `${stdout}${stderr}${e.message ?? ''}`,
+    };
+  }
+}
+
 /**
  * Cycle 5242ca92 — on `--resume`, the cycle directory already holds the
  * authoritative plan.json (e.g. the epic decomposer's wave-layered children,
@@ -610,6 +685,57 @@ export function tryLoadExistingPlanForResume(
     // missing or malformed — caller falls back to regeneration
   }
   return null;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function objectRows(value: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter(isObjectRecord);
+}
+
+function finiteNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function sumItemRowCosts(rows: Array<Record<string, unknown>>): number {
+  return rows.reduce(
+    (total, row) => total + (finiteNonNegativeNumber(row['costUsd']) ? row['costUsd'] : 0),
+    0,
+  );
+}
+
+function applyRestoredExecuteItemCosts(
+  rows: Array<Record<string, unknown>> | null,
+  restoredItems: Record<string, ExecuteCheckpointItemRecord>,
+): boolean {
+  if (rows === null) return false;
+  let changed = false;
+  for (const row of rows) {
+    const itemId = typeof row['itemId'] === 'string' ? row['itemId'] : undefined;
+    if (itemId === undefined) continue;
+    const restored = restoredItems[itemId];
+    if (restored === undefined || restored.costUsd <= 0) continue;
+
+    const currentCost = row['costUsd'];
+    const shouldRestoreCost =
+      !finiteNonNegativeNumber(currentCost) || currentCost === 0;
+    if (shouldRestoreCost) {
+      row['costUsd'] = restored.costUsd;
+      changed = true;
+    }
+    if (typeof row['agentId'] !== 'string' || row['agentId'].length === 0) {
+      row['agentId'] = restored.agentId;
+      changed = true;
+    }
+    if (shouldRestoreCost && row['restoredFromCheckpoint'] !== true) {
+      row['restoredFromCheckpoint'] = true;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -664,6 +790,11 @@ export interface CycleRunnerOptions {
    * kill switch when the corresponding flag is true.
    */
   preVerifyTypeCheck?: (cwd: string, testing: CycleConfig['testing']) => Promise<PreVerifyTypeCheckResult>;
+  /**
+   * Objective VERIFY dependency provisioning command runner. Production uses
+   * execFile; tests inject a mock so no package-manager command runs.
+   */
+  verifyDependencyRunner?: ChildVerifyCommandRunner;
   /**
    * Optional branch-level verifier for prMode='multi'. Production defaults to
    * checking each recorded agent branch in an isolated temporary git worktree.
@@ -1750,6 +1881,7 @@ export class CycleRunner {
       try {
         runSummary = await scheduler.run();
         this.totalCostUsd += runSummary.totalCostUsd;
+        this.restoreResumeExecuteCosts(runSummary);
         // P0.4 — KEYSTONE: capture the epic integration signal from the execute
         // phase result. When present, the release stage below pushes this ONE
         // integration branch and opens ONE PR from it instead of committing to
@@ -1868,6 +2000,10 @@ export class CycleRunner {
     // Run the project's real test command, derive a TestResult, then check
     // the kill switch's post-verify gate (test floor + regression policy).
     // ─────────────────────────────────────────────────────────────────
+    const verifyCwd = this.resolveObjectiveVerifyCwd();
+    if (verifyCwd !== undefined) {
+      await this.provisionObjectiveVerifyDependencies(verifyCwd);
+    }
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
       status: 'running',
@@ -1878,8 +2014,12 @@ export class CycleRunner {
       cycleId: this.cycleId,
       step: 'tests-started',
       detail: this.options.config.testing.command,
+      ...(verifyCwd !== undefined ? { verifyCwd } : {}),
     });
-    const testResult = await this.options.testRunner.run(this.cycleId);
+    const testResult =
+      verifyCwd !== undefined
+        ? await this.options.testRunner.run(this.cycleId, verifyCwd)
+        : await this.options.testRunner.run(this.cycleId);
     this.logger.logTestRun(testResult);
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
@@ -1902,6 +2042,7 @@ export class CycleRunner {
       failed: testResult.failed,
       total: testResult.total,
       passRate: testResult.passRate,
+      ...(verifyCwd !== undefined ? { verifyCwd } : {}),
     });
     this.testStats = {
       passed: testResult.passed,
@@ -2413,6 +2554,41 @@ export class CycleRunner {
     if (typeCheckTrip) throw new CycleKilledError(typeCheckTrip);
   }
 
+  private resolveObjectiveVerifyCwd(): string | undefined {
+    if (this.options.objective === undefined || this.epicIntegration === null) {
+      return undefined;
+    }
+    return integrationWorktreePathFor(this.options.cwd, this.epicIntegration.branch);
+  }
+
+  private async provisionObjectiveVerifyDependencies(verifyCwd: string): Promise<void> {
+    const detected = detectPackageCommands(verifyCwd);
+    const install = objectiveVerifyDependencyInstallCommand(verifyCwd, detected);
+    if (install === null) return;
+
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: 'dependencies-started',
+      detail: `${install.cmd} ${install.args.join(' ')}`,
+      verifyCwd,
+    });
+
+    const runner = this.options.verifyDependencyRunner ?? defaultVerifyDependencyRunner;
+    const result = await runner(install.cmd, install.args, verifyCwd);
+    this.options.bus.publish('sprint.phase.verify.step', {
+      cycleId: this.cycleId,
+      step: result.ok ? 'dependencies-complete' : 'dependencies-failed',
+      detail: `${install.cmd} ${install.args.join(' ')}`,
+      verifyCwd,
+    });
+    if (result.ok) return;
+
+    const tail = result.output.trim().slice(-2000);
+    throw new Error(
+      `objective verify dependency provisioning failed (${install.cmd} ${install.args.join(' ')}): ${tail}`,
+    );
+  }
+
   private async verifyMultiPrBranches(): Promise<void> {
     if (this.options.config.prMode !== 'multi') return;
 
@@ -2709,6 +2885,62 @@ export class CycleRunner {
       }
     }
     return total;
+  }
+
+  private restoreResumeExecuteCosts(runSummary: SprintRunSummary): void {
+    if (!this.options.resumeCheckpoint) return;
+
+    const restoredItems = getCompletedExecuteItems(this.options.cwd, this.cycleId);
+    if (!Object.values(restoredItems).some((item) => item.costUsd > 0)) return;
+
+    const executePhase = runSummary.completedPhases.find((p) => p.phase === 'execute');
+    if (executePhase !== undefined) {
+      const itemRows = objectRows(executePhase.itemResults);
+      const agentRows = objectRows(executePhase.agentRuns);
+      const changedItems = applyRestoredExecuteItemCosts(itemRows, restoredItems);
+      const changedAgents = applyRestoredExecuteItemCosts(agentRows, restoredItems);
+      const primaryRows = itemRows ?? agentRows;
+      if (primaryRows !== null && (changedItems || changedAgents)) {
+        executePhase.costUsd = Math.max(executePhase.costUsd, sumItemRowCosts(primaryRows));
+      }
+    }
+
+    this.restoreResumeExecuteCostsOnDisk(restoredItems);
+  }
+
+  private restoreResumeExecuteCostsOnDisk(
+    restoredItems: Record<string, ExecuteCheckpointItemRecord>,
+  ): void {
+    const execPath = join(
+      this.options.cwd,
+      '.agentforge/cycles',
+      this.cycleId,
+      'phases',
+      'execute.json',
+    );
+    if (!existsSync(execPath)) return;
+
+    try {
+      const parsed = JSON.parse(readFileSync(execPath, 'utf8')) as unknown;
+      if (!isObjectRecord(parsed)) return;
+      const itemRows = objectRows(parsed['itemResults']);
+      const agentRows = objectRows(parsed['agentRuns']);
+      const changedItems = applyRestoredExecuteItemCosts(itemRows, restoredItems);
+      const changedAgents = applyRestoredExecuteItemCosts(agentRows, restoredItems);
+      const primaryRows = itemRows ?? agentRows;
+      if (primaryRows !== null && (changedItems || changedAgents)) {
+        const restoredCostUsd = sumItemRowCosts(primaryRows);
+        const currentCost = parsed['costUsd'];
+        parsed['costUsd'] = finiteNonNegativeNumber(currentCost)
+          ? Math.max(currentCost, restoredCostUsd)
+          : restoredCostUsd;
+      }
+      if (changedItems || changedAgents) {
+        writeFileSync(execPath, JSON.stringify(parsed, null, 2), 'utf8');
+      }
+    } catch {
+      // Best-effort: restored accounting should not change the cycle outcome.
+    }
   }
 
   /**
