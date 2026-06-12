@@ -283,6 +283,7 @@ export interface TestResult {
   newFailures: string[];
   rawOutputPath: string;
   exitCode: number;
+  verifyCwd?: string;
 }
 
 export interface RankedItem {
