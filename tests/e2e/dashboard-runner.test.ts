@@ -16,6 +16,50 @@ type RunResponseOptions = {
   onRunRequest?: (payload: Record<string, unknown>) => void;
 };
 
+type ReadinessResponse = {
+  ready: boolean;
+  status: 'ready' | 'degraded';
+  summary: {
+    agentCount: number;
+    warningCount: number;
+    codexCliAvailable: boolean;
+    mcpServerAvailable: boolean;
+    codexLoginChecked: boolean;
+    codexLoginOk: boolean | null;
+  };
+  checks: Record<string, { ok: boolean | null; label: string; detail?: string }>;
+  warnings: string[];
+};
+
+const BASE_READINESS: ReadinessResponse = {
+  ready: false,
+  status: 'degraded',
+  summary: {
+    agentCount: 2,
+    warningCount: 2,
+    codexCliAvailable: true,
+    mcpServerAvailable: true,
+    codexLoginChecked: false,
+    codexLoginOk: null,
+  },
+  checks: {
+    exec: {
+      label: 'Codex exec preflight',
+      ok: true,
+      detail: 'status passed, launch path-command, exit 0, 38ms',
+    },
+    readinessCanary: {
+      label: 'Codex readiness canary',
+      ok: false,
+      detail: 'status failed, dashboard-readiness diff visible in runner panel',
+    },
+  },
+  warnings: [
+    'codex readiness canary failed: dashboard-readiness diff visible in runner panel',
+    'non-canary warning should not satisfy compact readiness evidence',
+  ],
+};
+
 async function injectMockEventSource(page: Page) {
   await page.addInitScript(() => {
     const sources: Array<{
@@ -67,9 +111,21 @@ async function injectMockEventSource(page: Page) {
   });
 }
 
+async function fulfillJson(route: Route, status: number, body: unknown) {
+  await route.fulfill({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+}
+
 async function mockRunnerApis(page: Page, options: RunResponseOptions = {}) {
   const sessionId = options.sessionId ?? 'run-test-1';
   const status = options.status ?? 202;
+
+  await page.route((url) => url.pathname === '/api/v5/codex/readiness', async (route: Route) => {
+    await fulfillJson(route, 200, { data: BASE_READINESS });
+  });
 
   await page.route('/api/v5/agents', async (route: Route) => {
     await route.fulfill({
@@ -186,6 +242,28 @@ test.describe('Runner Page', () => {
 
     await expect(page.locator('.running-indicator')).toHaveCount(0);
     await expect(page.locator('.history-item').first()).toContainText('completed');
+  });
+
+  test('shows visible compact Codex readiness canary status and evidence', async ({ page }) => {
+    await openRunner(page);
+
+    const panel = page.locator('[data-readiness-panel]');
+    const canaryRow = page.locator('[data-readiness-check="readinessCanary"][data-readiness-check-state="fail"]');
+    const canaryDetail = page.locator('[data-readiness-detail="readinessCanary"]');
+    const evidence = page.locator('[data-readiness-evidence]');
+
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute('data-readiness-status', 'degraded');
+    await expect(panel.getByText('CODEX READINESS', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Needs attention', { exact: true })).toBeVisible();
+    await expect(canaryRow).toBeVisible();
+    await expect(canaryRow.getByText('Codex readiness canary', { exact: true })).toBeVisible();
+    await expect(canaryRow.getByText('fail', { exact: true })).toBeVisible();
+    await expect(canaryDetail).toBeVisible();
+    await expect(canaryDetail).toContainText('dashboard-readiness diff visible in runner panel');
+    await expect(evidence).toBeVisible();
+    await expect(evidence.getByText('Readiness evidence', { exact: true })).toBeVisible();
+    await expect(evidence.getByText(/codex readiness canary failed/i)).toBeVisible();
   });
 
   test('renders raw gpt-5.5 invoke metadata as the xhigh profile', async ({ page }) => {

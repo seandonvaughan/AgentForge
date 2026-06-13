@@ -19,6 +19,9 @@ import {
   resolveVerifyConfig,
   isTestFile,
   selectAffectedFiles,
+  normalizeRepoPath,
+  findUncollectedTests,
+  formatUncollectedTestsError,
 } from '../../scripts/verify-test-planner.mjs';
 
 describe('computeWorkers', () => {
@@ -154,6 +157,80 @@ describe('selectAffectedFiles', () => {
     expect(selectAffectedFiles({})).toEqual([]);
     expect(selectAffectedFiles({ changedFiles: ['a\\b\\c.test.ts'] }))
       .toEqual(['a/b/c.test.ts']);
+  });
+});
+
+describe('test inventory collection', () => {
+  it('normalizes Windows paths to repo-relative paths', () => {
+    expect(normalizeRepoPath('C:\\repo\\agentforge\\packages\\core\\src\\runtime\\__tests__\\worktree-pool.test.ts'))
+      .toBe('packages/core/src/runtime/__tests__/worktree-pool.test.ts');
+
+    const uncollected = findUncollectedTests({
+      changedFiles: ['packages\\core\\src\\runtime\\worktree-pool.ts'],
+      selectedFiles: ['packages\\core\\src\\runtime\\worktree-pool.ts'],
+      testFiles: ['packages\\core\\src\\runtime\\__tests__\\worktree-pool.test.ts'],
+    });
+
+    expect(uncollected).toEqual(['packages/core/src/runtime/__tests__/worktree-pool.test.ts']);
+  });
+
+  it('reports package tests under packages/* that selected inputs missed', () => {
+    const uncollected = findUncollectedTests({
+      changedFiles: ['packages/core/src/runtime/provider-resolver.ts'],
+      selectedFiles: ['packages/core/src/runtime/provider-resolver.ts'],
+      testFiles: [
+        'packages/core/src/runtime/__tests__/provider-resolver.test.ts',
+        'tests/runtime/provider-resolver.test.ts',
+      ],
+    });
+
+    expect(uncollected).toEqual(['packages/core/src/runtime/__tests__/provider-resolver.test.ts']);
+  });
+
+  it('reports dashboard route and component tests from colocated __tests__ folders', () => {
+    const uncollected = findUncollectedTests({
+      changedFiles: [
+        'packages/dashboard/src/routes/workspaces/active/+page.svelte',
+        'packages/dashboard/src/lib/components/CodexReadinessPanel.svelte',
+      ],
+      selectedFiles: [
+        'packages/dashboard/src/routes/workspaces/active/+page.svelte',
+        'packages/dashboard/src/lib/components/CodexReadinessPanel.svelte',
+      ],
+      testFiles: [
+        'packages/dashboard/src/routes/workspaces/active/__tests__/page.test.ts',
+        'packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts',
+      ],
+    });
+
+    expect(uncollected).toEqual([
+      'packages/dashboard/src/routes/workspaces/active/__tests__/page.test.ts',
+      'packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts',
+    ]);
+  });
+
+  it('does not report a changed test file once affected selection force-includes it', () => {
+    const changedFiles = [
+      'packages/core/src/runtime/worktree-pool.ts',
+      'packages/core/src/runtime/__tests__/worktree-pool.test.ts',
+    ];
+    const selectedFiles = selectAffectedFiles({ changedFiles, relatedFiles: ['packages/core/src/runtime/worktree-pool.ts'] });
+
+    expect(findUncollectedTests({
+      changedFiles,
+      selectedFiles,
+      testFiles: ['packages/core/src/runtime/__tests__/worktree-pool.test.ts'],
+    })).toEqual([]);
+  });
+
+  it('formats actionable error text with repo-relative paths', () => {
+    const text = formatUncollectedTestsError([
+      'C:\\repo\\agentforge\\packages\\dashboard\\src\\routes\\workspaces\\active\\__tests__\\page.test.ts',
+    ]);
+
+    expect(text).toContain('missed test files');
+    expect(text).toContain('Add these repo-relative paths');
+    expect(text).toContain('- packages/dashboard/src/routes/workspaces/active/__tests__/page.test.ts');
   });
 });
 

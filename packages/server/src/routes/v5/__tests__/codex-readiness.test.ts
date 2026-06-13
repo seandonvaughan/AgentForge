@@ -41,6 +41,12 @@ function makeReadinessReport(
     codexExecProbeMessage: 'codex exec preflight completed.',
     codexDoctorChecked: false,
     codexDoctorOk: null,
+    codexReadinessCanary: {
+      checked: true,
+      ok: true,
+      status: 'passed',
+      message: 'dashboard readiness canary passed',
+    },
     mcpServerAvailable: true,
     mcpServerPath: join(projectRoot, 'packages', 'mcp-server', 'dist', 'index.js'),
     codexLoginChecked: false,
@@ -105,6 +111,9 @@ describe('GET /api/v5/codex/readiness', () => {
           codexExecProbeLaunchKind: string | null;
           codexExecProbeExitCode: number | null;
           codexExecProbeDurationMs: number | null;
+          codexReadinessCanaryChecked: boolean;
+          codexReadinessCanaryOk: boolean | null;
+          codexReadinessCanaryStatus: string | null;
           mcpServerAvailable: boolean;
           codexLoginChecked: boolean;
           codexLoginOk: boolean | null;
@@ -122,9 +131,17 @@ describe('GET /api/v5/codex/readiness', () => {
     expect(body.data.summary.codexExecProbeChecked).toBe(true);
     expect(body.data.summary.codexExecProbeOk).toBe(true);
     expect(body.data.summary.codexExecProbeStatus).toBe('passed');
+    expect(body.data.summary.codexReadinessCanaryChecked).toBe(true);
+    expect(body.data.summary.codexReadinessCanaryOk).toBe(true);
+    expect(body.data.summary.codexReadinessCanaryStatus).toBe('passed');
     expect(body.data.checks.exec).toMatchObject({
       label: 'Codex exec preflight',
       ok: true,
+    });
+    expect(body.data.checks.readinessCanary).toMatchObject({
+      label: 'Codex readiness canary',
+      ok: true,
+      detail: 'status passed, dashboard readiness canary passed',
     });
     expect(body.data.summary.codexLoginChecked).toBe(false);
     expect(body.data.summary.codexLoginOk).toBeNull();
@@ -196,7 +213,16 @@ describe('GET /api/v5/codex/readiness', () => {
         codexExecProbeStatus: 'failed',
         codexExecProbeExitCode: 2,
         codexExecProbeMessage: `${projectRoot} failed with ${leakedToken}`,
-        warnings: [`codex exec preflight failed (failed, exit 2): ${projectRoot} failed with ${leakedToken}`],
+        codexReadinessCanary: {
+          checked: true,
+          ok: false,
+          status: 'failed',
+          message: `${projectRoot} readiness canary leaked ${leakedToken}`,
+        },
+        warnings: [
+          `codex exec preflight failed (failed, exit 2): ${projectRoot} failed with ${leakedToken}`,
+          `codex readiness canary failed: ${projectRoot} readiness canary leaked ${leakedToken}`,
+        ],
       }),
     });
     await app.ready();
@@ -216,6 +242,9 @@ describe('GET /api/v5/codex/readiness', () => {
           codexExecProbeOk: boolean | null;
           codexExecProbeStatus: string;
           codexExecProbeExitCode: number | null;
+          codexReadinessCanaryChecked: boolean;
+          codexReadinessCanaryOk: boolean | null;
+          codexReadinessCanaryStatus: string | null;
         };
         checks: Record<string, { ok: boolean | null; label: string; detail?: string }>;
         warnings: string[];
@@ -229,6 +258,9 @@ describe('GET /api/v5/codex/readiness', () => {
       codexExecProbeOk: false,
       codexExecProbeStatus: 'failed',
       codexExecProbeExitCode: 2,
+      codexReadinessCanaryChecked: true,
+      codexReadinessCanaryOk: false,
+      codexReadinessCanaryStatus: 'failed',
     });
     expect(body.data.checks.exec).toMatchObject({
       label: 'Codex exec preflight',
@@ -239,10 +271,22 @@ describe('GET /api/v5/codex/readiness', () => {
     expect(execDetail).toContain('[redacted-secret]');
     expect(execDetail).not.toContain(projectRoot);
     expect(execDetail).not.toContain(leakedToken);
-    expect(body.data.warnings).toHaveLength(1);
+    expect(body.data.checks.readinessCanary).toMatchObject({
+      label: 'Codex readiness canary',
+      ok: false,
+    });
+    const canaryDetail = body.data.checks.readinessCanary?.detail ?? '';
+    expect(canaryDetail).toContain('[project-root]');
+    expect(canaryDetail).toContain('[redacted-secret]');
+    expect(canaryDetail).not.toContain(projectRoot);
+    expect(canaryDetail).not.toContain(leakedToken);
+    expect(body.data.warnings).toHaveLength(2);
     expect(body.data.warnings[0]).toContain('codex exec preflight failed');
     expect(body.data.warnings[0]).not.toContain(projectRoot);
     expect(body.data.warnings[0]).not.toContain(leakedToken);
+    expect(body.data.warnings[1]).toContain('codex readiness canary failed');
+    expect(body.data.warnings[1]).not.toContain(projectRoot);
+    expect(body.data.warnings[1]).not.toContain(leakedToken);
 
     await app.close();
   });
