@@ -1,6 +1,6 @@
 # Release and Security Gates
 
-**Last reviewed:** May 1, 2026
+**Last reviewed:** June 13, 2026
 
 This document is the current release gate policy for AgentForge's package-canonical stack.
 
@@ -26,8 +26,7 @@ The product gate is split so failures identify the broken surface quickly:
 - `corepack pnpm check:help`
 - `corepack pnpm check:changelog`
 - `corepack pnpm audit:deps`
-- `corepack pnpm test:run`
-- `corepack pnpm test:e2e:dashboard` for runner streaming, live events, and health status
+- `corepack pnpm verify:gatekeeper-canary` for the full Vitest suite plus the serialized dashboard canary selector
 
 `corepack pnpm verify:gates` covers the release truth gate and dashboard check/build. Vitest and Playwright remain explicit CI/release steps so test artifacts are easier to inspect.
 
@@ -40,10 +39,10 @@ The product gate is split so failures identify the broken surface quickly:
 - Vitest
 - TypeScript build
 - dashboard check/build
-- dashboard Playwright e2e for runner streaming, live events, and health status
+- dashboard Playwright e2e for agents, cycles, runner streaming, live events, org graph, and health/readiness status
 - type-check
 
-The Playwright lane installs Chromium in CI and uploads the HTML report on failure or success. The broad legacy dashboard suite remains available through `corepack pnpm test:e2e`; do not add it to the release gate until stale route and API-shape expectations are repaired.
+The Playwright lane installs Chromium in CI and uploads the HTML report on failure or success. The release gate uses `corepack pnpm test:e2e:dashboard:canary`, which runs the approved dashboard selector with `--workers=1` after the large Vitest suite to avoid post-unit-suite resource contention. The parallel `corepack pnpm test:e2e:dashboard` command remains available for local dashboard iteration.
 
 ## Security Posture
 
@@ -61,11 +60,11 @@ The Playwright lane installs Chromium in CI and uploads the HTML report on failu
 `.github/workflows/release.yml` runs release validation on Node `20.19.x` and `22.13.x` before creating a GitHub release:
 
 - install with `pnpm install --frozen-lockfile`
-- run `pnpm verify:gates`
-- run Vitest
-- run `tsc --noEmit`
 - install Chromium
-- run dashboard Playwright gates for runner streaming, live events, and health status
+- run `pnpm verify:gates`
+- run `pnpm verify:gatekeeper-canary`
+- run `tsc --noEmit`
+- run dashboard Playwright gates for agents, cycles, runner streaming, live events, org graph, and health/readiness status
 
 The release artifact build currently uses Node `20.19.x` after both validation lanes pass.
 

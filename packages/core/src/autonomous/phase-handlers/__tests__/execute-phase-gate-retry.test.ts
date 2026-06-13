@@ -57,6 +57,14 @@ function writeSprint(
   writeFileSync(join(cycleDir, 'plan.json'), JSON.stringify(data));
 }
 
+function writeProjectFiles(files: string[]): void {
+  for (const file of files) {
+    const parts = file.split(/[\\/]+/).filter(Boolean);
+    mkdirSync(join(tmpRoot, ...parts.slice(0, -1)), { recursive: true });
+    writeFileSync(join(tmpRoot, ...parts), '// test fixture\n', 'utf8');
+  }
+}
+
 function makeCtx(runtime: unknown, gateRetry: unknown): PhaseContext {
   return {
     projectRoot: tmpRoot,
@@ -72,6 +80,12 @@ function makeCtx(runtime: unknown, gateRetry: unknown): PhaseContext {
 
 describe('execute phase — gate-retry routes findings to the owning item', () => {
   it('re-executes only the item whose files match the finding; keeps the rest', async () => {
+    writeProjectFiles([
+      'docs/runtime-modes.md',
+      'CLAUDE.md',
+      'README.md',
+      'packages/core/src/runtime/types.ts',
+    ]);
     writeSprint([
       { id: 'item-A', title: 'Fix runtime-modes docs', assignee: 'docs-engineer', files: ['docs/runtime-modes.md'] },
       { id: 'item-B', title: 'Reconcile CLAUDE.md', assignee: 'chief-architect', files: ['CLAUDE.md', 'README.md'] },
@@ -141,6 +155,7 @@ describe('execute phase — gate-retry routes findings to the owning item', () =
   });
 
   it('falls back to re-executing all items when no item file matches the finding', async () => {
+    writeProjectFiles(['docs/a.md', 'docs/b.md']);
     writeSprint([
       { id: 'item-A', title: 'A', assignee: 'a', files: ['docs/a.md'] },
       { id: 'item-B', title: 'B', assignee: 'b', files: ['docs/b.md'] },
@@ -165,6 +180,7 @@ describe('execute phase — gate-retry routes findings to the owning item', () =
   });
 
   it('re-executes all items when there is no gate-retry (normal first pass)', async () => {
+    writeProjectFiles(['docs/a.md', 'docs/b.md']);
     writeSprint([
       { id: 'item-A', title: 'A', assignee: 'a', files: ['docs/a.md'] },
       { id: 'item-B', title: 'B', assignee: 'b', files: ['docs/b.md'] },

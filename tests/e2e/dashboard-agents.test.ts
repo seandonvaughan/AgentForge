@@ -103,13 +103,16 @@ test.describe('Agents List Page', () => {
 
     // Rows expose a native link so click/keyboard navigation does not depend on
     // a hydrated JavaScript handler attached to <tr>.
-    await expect(firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`)).toBeVisible();
+    const agentLink = firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`);
+    await expect(agentLink).toBeVisible();
 
     // Click the native link so navigation does not depend on a hydrated row handler.
     // waitForLoadState('load') is a no-op after client-side routing (the page
     // is already in 'load' state), so we wait for the URL to change instead.
-    await firstRow.locator(`a.af-row-link[href="/agents/${agentId}"]`).click();
-    await expect(page).toHaveURL(/\/agents\/.+/, { timeout: 5000 });
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === `/agents/${agentId}`, { timeout: 15_000 }),
+      agentLink.click(),
+    ]);
   });
 
   test('agent detail Run action opens runner with the selected Codex agent', async ({ page }) => {
@@ -194,9 +197,9 @@ test.describe('Agents List Page', () => {
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible();
 
-    // Resolved model/effort chips must appear on rows (Claude-primary ids;
-    // gpt-* only when a codex run actually served).
-    await expect(table).toContainText(/claude-(fable-5|opus-4-8|sonnet-4-6|haiku-4-5)/);
+    // Resolved model/effort chips must appear on rows. Local model config may
+    // map capability tiers to Claude or Codex/GPT concrete model IDs.
+    await expect(table).toContainText(/claude-(fable-5|opus-4-8|sonnet-4-6|haiku-4-5)|gpt-5\.[45](?:-mini)?/);
     await expect(table).toContainText(/xhigh|high|medium/i);
   });
 
@@ -318,14 +321,14 @@ test.describe('Agents List Page', () => {
     const table = page.locator('table.data-table');
     await expect(table).toBeVisible({ timeout: 5000 });
 
-    // All visible rows should have opus in their model column or badge
     const rows = table.locator('tbody tr');
     const rowCount = await rows.count();
 
     if (rowCount > 0) {
-      // Get first row and verify it has an opus badge or model indicator
+      // The visible model chip is the resolved runtime profile. In local Codex
+      // mode the opus tier can resolve to a concrete gpt-* model.
       const firstRow = rows.first();
-      await expect(firstRow).toContainText(/claude-opus-4-8|opus/i);
+      await expect(firstRow).toContainText(/claude-opus-4-8|opus|gpt-5\.[45](?:-mini)?/i);
     }
   });
 
@@ -335,7 +338,9 @@ test.describe('Agents List Page', () => {
    * Verify that filtering on one view doesn't break when navigating
    * and returning to the list.
    */
-  test('agents page: team filter state clears on page reload', async ({ page }) => {
+  test('agents page: team filter state clears on page reload', async ({ page }, testInfo) => {
+    test.setTimeout(45_000);
+
     await page.goto('/agents');
     await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
     await waitForAgentsHydrated(page);
@@ -351,14 +356,16 @@ test.describe('Agents List Page', () => {
     await teamSelect.selectOption(optionValues[0]!);
     await expect(teamSelect).toHaveValue(optionValues[0]!);
 
-    // Reload page
-    await page.reload();
-    await page.waitForLoadState('load').catch(() => {});
+    // Re-enter the route to verify filter state resets. Use a distinct URL so
+    // Playwright does not race an in-flight same-URL navigation after Vitest.
+    await page.goto(
+      `/agents?reset=team-filter-${testInfo.workerIndex}-${testInfo.retry}`,
+      { waitUntil: 'domcontentloaded' },
+    );
 
-    // After reload, filter should be cleared (unless persisted)
-    // This test documents the expected behavior
     const table = page.locator('table.data-table');
-    await expect(table).toBeVisible({ timeout: 5000 });
+    await expect(table).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel('Filter by team')).toHaveValue('', { timeout: 10_000 });
 
     // Page should have navigated and state reset — verify it's still functional
     const heading = page.locator('h1').filter({ hasText: /Agent fleet/i }).first();

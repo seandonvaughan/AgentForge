@@ -90,6 +90,7 @@ describe.skipIf(process.platform !== 'win32')('CodexCliTransport Windows spawn i
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (codexPackage) {
       rmSync(codexPackage.root, { recursive: true, force: true });
       codexPackage = undefined;
@@ -131,18 +132,38 @@ describe.skipIf(process.platform !== 'win32')('CodexCliTransport Windows spawn i
       return child;
     });
 
+    vi.stubEnv('AGENTFORGE_CODEX_BIN', codexPackage.nativeExe);
     const transport = new CodexCliTransport() as unknown as CodexCliTransportTestAccess;
     const result = await transport.invokeCodexCli(makeRequest({ cwd: '.' }));
 
     expect(result.outputText).toBe('ok');
-    expect(spawnMock).toHaveBeenCalledWith(
-      codexPackage.nativeExe,
-      expect.arrayContaining(['exec', '--json']),
-      expect.objectContaining({
-        cwd: resolve('.'),
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      }),
-    );
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [command, args, options] = spawnMock.mock.calls[0] as [
+      string,
+      string[],
+      { cwd?: string; stdio?: string[]; windowsHide?: boolean },
+    ];
+    expect(command).toBe(codexPackage.nativeExe);
+    expect(args).toEqual(expect.arrayContaining([
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--json',
+      '--model',
+      'gpt-5.3-codex',
+      '--cd',
+      resolve('.'),
+      '--sandbox',
+      'workspace-write',
+      '-c',
+      'windows.sandbox=elevated',
+      '-c',
+      'model_reasoning_effort=high',
+    ]));
+    expect(options.cwd).toBe(resolve('.'));
+    expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
+    expect(options.windowsHide).toBe(true);
   });
 });

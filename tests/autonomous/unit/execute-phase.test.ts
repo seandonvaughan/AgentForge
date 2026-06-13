@@ -64,6 +64,14 @@ function writeSprintFile(
   writeFileSync(join(dir, `v${version}.json`), JSON.stringify(wrapper, null, 2));
 }
 
+function writeProjectFiles(cwd: string, files: string[]): void {
+  for (const file of files) {
+    const parts = file.split(/[\\/]+/).filter(Boolean);
+    mkdirSync(join(cwd, ...parts.slice(0, -1)), { recursive: true });
+    writeFileSync(join(cwd, ...parts), '// test fixture\n', 'utf8');
+  }
+}
+
 function makeCtx(opts: {
   cwd: string;
   sprintVersion: string;
@@ -266,6 +274,7 @@ describe('runExecutePhase', () => {
   });
 
   it('dispatches items in parallel up to the parallelism cap', async () => {
+    writeProjectFiles(tmpDir, ['src/a.ts', 'src/b.ts', 'src/c.ts']);
     writeSprintFile(tmpDir, '9.9.9', [
       { id: 'i1', title: 'a', assignee: 'coder', files: ['src/a.ts'] } as any,
       { id: 'i2', title: 'b', assignee: 'coder', files: ['src/b.ts'] } as any,
@@ -447,6 +456,7 @@ describe('runExecutePhase', () => {
   // ---- v6.6.0 file-conflict detection ----
 
   it('runs items with disjoint files in parallel', async () => {
+    writeProjectFiles(tmpDir, ['src/a.ts', 'src/b.ts', 'src/c.ts']);
     writeSprintFile(tmpDir, '9.9.9', [
       { id: 'i1', title: 'a', assignee: 'coder', files: ['src/a.ts'] } as any,
       { id: 'i2', title: 'b', assignee: 'coder', files: ['src/b.ts'] } as any,
@@ -472,6 +482,7 @@ describe('runExecutePhase', () => {
   });
 
   it('serializes items with overlapping files even when parallelism > 1', async () => {
+    writeProjectFiles(tmpDir, ['src/shared.ts']);
     writeSprintFile(tmpDir, '9.9.9', [
       { id: 'i1', title: 'a', assignee: 'coder', files: ['src/shared.ts'] } as any,
       { id: 'i2', title: 'b', assignee: 'coder', files: ['src/shared.ts'] } as any,

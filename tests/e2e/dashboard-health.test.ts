@@ -28,6 +28,21 @@ type ServicesResponse = {
   timestamp: string;
 };
 
+type ReadinessResponse = {
+  ready: boolean;
+  status: 'ready' | 'degraded';
+  summary: {
+    agentCount: number;
+    warningCount: number;
+    codexCliAvailable: boolean;
+    mcpServerAvailable: boolean;
+    codexLoginChecked: boolean;
+    codexLoginOk: boolean | null;
+  };
+  checks: Record<string, { ok: boolean | null; label: string; detail?: string }>;
+  warnings: string[];
+};
+
 const BASE_HEALTH: HealthResponse = {
   status: 'ok',
   version: '10.5.1',
@@ -66,6 +81,35 @@ const BASE_SERVICES: ServicesResponse = {
   ],
 };
 
+const BASE_READINESS: ReadinessResponse = {
+  ready: false,
+  status: 'degraded',
+  summary: {
+    agentCount: 3,
+    warningCount: 2,
+    codexCliAvailable: true,
+    mcpServerAvailable: true,
+    codexLoginChecked: false,
+    codexLoginOk: null,
+  },
+  checks: {
+    exec: {
+      label: 'Codex exec preflight',
+      ok: true,
+      detail: 'status passed, launch path-command, exit 0, 42ms',
+    },
+    readinessCanary: {
+      label: 'Codex readiness canary',
+      ok: false,
+      detail: 'status failed, dashboard-readiness diff visible in health panel',
+    },
+  },
+  warnings: [
+    'codex readiness canary failed: dashboard-readiness diff visible in health panel',
+    'unrelated warning hidden from compact-only assertions',
+  ],
+};
+
 async function fulfillJson(route: Route, status: number, body: unknown) {
   await route.fulfill({
     status,
@@ -81,6 +125,7 @@ async function mockHealthApis(
     servicesStatus?: number;
     healthBody?: HealthResponse;
     servicesBody?: ServicesResponse;
+    readinessBody?: ReadinessResponse;
   } = {},
 ) {
   const {
@@ -88,9 +133,14 @@ async function mockHealthApis(
     servicesStatus = 200,
     healthBody = BASE_HEALTH,
     servicesBody = BASE_SERVICES,
+    readinessBody = BASE_READINESS,
   } = opts;
 
-  await page.route('**/api/v5/health/services', async (route) => {
+  await page.route((url) => url.pathname === '/api/v5/codex/readiness', async (route) => {
+    await fulfillJson(route, 200, { data: readinessBody });
+  });
+
+  await page.route((url) => url.pathname === '/api/v5/health/services', async (route) => {
     if (servicesStatus >= 400) {
       await fulfillJson(route, servicesStatus, { error: 'services unavailable' });
       return;
@@ -98,7 +148,7 @@ async function mockHealthApis(
     await fulfillJson(route, servicesStatus, servicesBody);
   });
 
-  await page.route('**/api/v5/health', async (route) => {
+  await page.route((url) => url.pathname === '/api/v5/health', async (route) => {
     if (healthStatus >= 400) {
       await fulfillJson(route, healthStatus, { error: 'health unavailable' });
       return;
@@ -110,6 +160,7 @@ async function mockHealthApis(
 async function gotoHealth(page: Page) {
   await page.goto('/health', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('h1.health-title')).toHaveText(/system health/i);
+  await expect(page.locator('.skeleton')).toHaveCount(0, { timeout: 20_000 });
 }
 
 test.describe('Health Dashboard Page', () => {
@@ -120,6 +171,29 @@ test.describe('Health Dashboard Page', () => {
     await expect(page.locator('.status-main')).toContainText(/system healthy/i);
     await expect(page.locator('.services-grid .svc-name')).toHaveCount(2);
     await expect(page.locator('.dep-table tbody tr')).toHaveCount(5);
+  });
+
+  test('shows visible Codex readiness canary status and evidence', async ({ page }) => {
+    await mockHealthApis(page);
+    await gotoHealth(page);
+
+    const panel = page.locator('[data-readiness-panel]');
+    const canaryRow = page.locator('[data-readiness-check="readinessCanary"][data-readiness-check-state="fail"]');
+    const canaryDetail = page.locator('[data-readiness-detail="readinessCanary"]');
+    const evidence = page.locator('[data-readiness-evidence]');
+
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute('data-readiness-status', 'degraded');
+    await expect(panel.getByText('CODEX READINESS', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Needs attention', { exact: true })).toBeVisible();
+    await expect(canaryRow).toBeVisible();
+    await expect(canaryRow.getByText('Codex readiness canary', { exact: true })).toBeVisible();
+    await expect(canaryRow.getByText('fail', { exact: true })).toBeVisible();
+    await expect(canaryDetail).toBeVisible();
+    await expect(canaryDetail).toContainText('dashboard-readiness diff visible in health panel');
+    await expect(evidence).toBeVisible();
+    await expect(evidence.getByText('Readiness evidence', { exact: true })).toBeVisible();
+    await expect(evidence.getByText(/codex readiness canary failed/i)).toBeVisible();
   });
 
   test('renders recent incidents when a service is degraded or circuit-open', async ({ page }) => {
@@ -175,6 +249,7 @@ test.describe('Health Dashboard Page', () => {
   test('shows connection banner when both health endpoints fail', async ({ page }) => {
     await mockHealthApis(page, { healthStatus: 503, servicesStatus: 503 });
     await page.goto('/health', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.skeleton')).toHaveCount(0, { timeout: 20_000 });
 
     await expect(page.locator('.error-banner')).toContainText(/unable to reach api server/i);
     await expect(page.locator('.error-banner')).toContainText(/http 503/i);

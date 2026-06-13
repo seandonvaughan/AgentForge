@@ -10,6 +10,15 @@ const DASHBOARD_READINESS_SPECS = [
   'packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts',
   'packages/server/src/routes/v5/__tests__/codex-readiness.test.ts',
 ] as const;
+const DASHBOARD_E2E_SPECS = [
+  'tests/e2e/dashboard-agents.test.ts',
+  'tests/e2e/dashboard-runner.test.ts',
+  'tests/e2e/dashboard-live.test.ts',
+  'tests/e2e/dashboard-health.test.ts',
+  'tests/e2e/dashboard-org.test.ts',
+  'tests/e2e/dashboard-cycle-launch.test.ts',
+  'tests/e2e/dashboard-cycle-detail.test.ts',
+] as const;
 
 function repoPath(path: string): string {
   return resolve(ROOT, path);
@@ -59,7 +68,7 @@ function assertScriptEquals(
 }
 
 describe('test discoverability CI gate', () => {
-  it('keeps verify:product on the broad vitest run consumed by this CI guard', () => {
+  it('keeps verify:product on the named Gatekeeper/Canary verifier path', () => {
     const scripts = loadRootScripts();
 
     assertScriptEquals(
@@ -70,9 +79,21 @@ describe('test discoverability CI gate', () => {
     );
     assertScriptEquals(
       scripts,
+      'verify:gatekeeper-canary',
+      'node scripts/run-pnpm.mjs -- test:run && node scripts/run-pnpm.mjs -- test:e2e:dashboard:canary',
+      'Restore the named Gatekeeper/Canary verifier before changing product verification.',
+    );
+    assertScriptEquals(
+      scripts,
+      'test:e2e:dashboard:canary',
+      `playwright test --workers=1 ${DASHBOARD_E2E_SPECS.join(' ')}`,
+      'Keep the release dashboard canary serialized while preserving the full approved selector.',
+    );
+    assertScriptEquals(
+      scripts,
       'verify:product',
-      'node scripts/run-pnpm.mjs -- check:types && node scripts/run-pnpm.mjs -- test:run && node scripts/run-pnpm.mjs -- test:e2e:dashboard',
-      'Restore the check:types -> test:run -> dashboard e2e chain before changing product verification.',
+      'node scripts/run-pnpm.mjs -- check:types && node scripts/run-pnpm.mjs -- verify:gatekeeper-canary',
+      'Restore the check:types -> verify:gatekeeper-canary chain before changing product verification.',
     );
   });
 

@@ -13,7 +13,7 @@ const DASHBOARD_E2E_SPECS = [
   'tests/e2e/dashboard-cycle-launch.test.ts',
   'tests/e2e/dashboard-cycle-detail.test.ts',
 ] as const;
-const DASHBOARD_E2E_COMMAND = `playwright test ${DASHBOARD_E2E_SPECS.join(' ')}`;
+const DASHBOARD_E2E_CANARY_COMMAND = `playwright test --workers=1 ${DASHBOARD_E2E_SPECS.join(' ')}`;
 const DASHBOARD_CHECK_COMMAND = 'node scripts/run-pnpm.mjs -- --filter @agentforge/dashboard check';
 
 function parseDashboardE2eSpecs(script: string): string[] {
@@ -27,7 +27,7 @@ function parseDashboardE2eSpecs(script: string): string[] {
     .slice(prefix.length)
     .trim()
     .split(/\s+/)
-    .filter((token) => token.length > 0);
+    .filter((token) => token.length > 0 && !token.startsWith('-'));
 }
 
 function parsePipelineSteps(script: string): string[] {
@@ -71,26 +71,39 @@ describe('package scripts', () => {
   it('keeps verify:product on the full dashboard e2e selector', () => {
     const scripts = loadRootScripts();
     const verifyProduct = scripts['verify:product'];
+    const gatekeeperCanary = scripts['verify:gatekeeper-canary'];
     const dashboardE2e = scripts['test:e2e:dashboard'];
+    const dashboardCanary = scripts['test:e2e:dashboard:canary'];
 
-    expect(verifyProduct).toContain('node scripts/run-pnpm.mjs -- test:e2e:dashboard');
+    expect(verifyProduct).toContain('node scripts/run-pnpm.mjs -- verify:gatekeeper-canary');
+    expect(gatekeeperCanary).toContain('node scripts/run-pnpm.mjs -- test:e2e:dashboard:canary');
     expect(verifyProduct).not.toContain('test:e2e:dashboard:full');
+    expect(dashboardCanary).toContain('--workers=1');
     expect(dashboardE2e).toContain('dashboard-agents.test.ts');
+    expect(dashboardCanary).toContain('dashboard-agents.test.ts');
     expect(dashboardE2e).toContain('dashboard-runner.test.ts');
+    expect(dashboardCanary).toContain('dashboard-runner.test.ts');
     expect(dashboardE2e).toContain('dashboard-live.test.ts');
+    expect(dashboardCanary).toContain('dashboard-live.test.ts');
     expect(dashboardE2e).toContain('dashboard-health.test.ts');
+    expect(dashboardCanary).toContain('dashboard-health.test.ts');
     expect(dashboardE2e).toContain('dashboard-org.test.ts');
+    expect(dashboardCanary).toContain('dashboard-org.test.ts');
     expect(dashboardE2e).toContain('dashboard-cycle-launch.test.ts');
+    expect(dashboardCanary).toContain('dashboard-cycle-launch.test.ts');
     expect(dashboardE2e).toContain('dashboard-cycle-detail.test.ts');
+    expect(dashboardCanary).toContain('dashboard-cycle-detail.test.ts');
   });
 
-  it('pins dashboard e2e to the exact approved spec list with no duplicates', () => {
+  it('pins dashboard e2e scripts to the exact approved spec list with no duplicates', () => {
     const scripts = loadRootScripts();
-    const dashboardE2e = scripts['test:e2e:dashboard'];
-    const selectedSpecs = parseDashboardE2eSpecs(dashboardE2e);
+    const selectedSpecs = parseDashboardE2eSpecs(scripts['test:e2e:dashboard']);
+    const selectedCanarySpecs = parseDashboardE2eSpecs(scripts['test:e2e:dashboard:canary']);
 
     expect(selectedSpecs).toEqual([...DASHBOARD_E2E_SPECS]);
     expect(new Set(selectedSpecs).size).toBe(selectedSpecs.length);
+    expect(selectedCanarySpecs).toEqual([...DASHBOARD_E2E_SPECS]);
+    expect(new Set(selectedCanarySpecs).size).toBe(selectedCanarySpecs.length);
   });
 
   it('locks verify:product to the exact regression-gate pipeline shape', () => {
@@ -99,8 +112,17 @@ describe('package scripts', () => {
 
     expect(parsePipelineSteps(verifyProduct)).toEqual([
       'node scripts/run-pnpm.mjs -- check:types',
+      'node scripts/run-pnpm.mjs -- verify:gatekeeper-canary',
+    ]);
+  });
+
+  it('locks verify:gatekeeper-canary to the deterministic unit and dashboard canary path', () => {
+    const scripts = loadRootScripts();
+    const verifyGatekeeperCanary = scripts['verify:gatekeeper-canary'];
+
+    expect(parsePipelineSteps(verifyGatekeeperCanary)).toEqual([
       'node scripts/run-pnpm.mjs -- test:run',
-      'node scripts/run-pnpm.mjs -- test:e2e:dashboard',
+      'node scripts/run-pnpm.mjs -- test:e2e:dashboard:canary',
     ]);
   });
 
@@ -114,7 +136,7 @@ describe('package scripts', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_CANARY_COMMAND]);
     expect(result.trace).not.toContain('playwright test');
   });
 
@@ -139,7 +161,7 @@ describe('package scripts', () => {
 
     const result = await harness.run('verify:gates');
     const dashboardE2eRuns = result.trace.filter((command) =>
-      command.startsWith('playwright test tests/e2e/dashboard-'),
+      command.startsWith('playwright test') && command.includes('tests/e2e/dashboard-'),
     );
 
     expect(result.ok).toBe(true);
@@ -159,7 +181,7 @@ describe('package scripts', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(playwrightRuns).toEqual([DASHBOARD_E2E_COMMAND]);
+    expect(playwrightRuns).toEqual([DASHBOARD_E2E_CANARY_COMMAND]);
     expect(result.trace).not.toContain('playwright test');
   });
 
@@ -195,7 +217,7 @@ describe('package scripts', () => {
     expect(result.trace).toContain('vitest run');
     expect(
       result.trace.some((command) =>
-        command.startsWith('playwright test tests/e2e/dashboard-agents.test.ts'),
+        parseDashboardE2eSpecs(command).includes('tests/e2e/dashboard-agents.test.ts'),
       ),
     ).toBe(true);
     expect(result.trace).toContain(DASHBOARD_CHECK_COMMAND);
