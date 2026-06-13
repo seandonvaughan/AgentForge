@@ -65,6 +65,7 @@ export async function codexReadinessRoutes(
     }
 
     const status = report.ready ? 'ready' : 'degraded';
+    const readinessCanary = report.codexReadinessCanary;
 
     return reply.send({
       data: {
@@ -85,6 +86,9 @@ export async function codexReadinessRoutes(
           codexDoctorOk: report.codexDoctorOk,
           codexDoctorStatus: report.codexDoctorStatus ?? null,
           codexDoctorVersion: report.codexDoctorVersion ?? null,
+          codexReadinessCanaryChecked: readinessCanary?.checked ?? false,
+          codexReadinessCanaryOk: readinessCanary?.ok ?? null,
+          codexReadinessCanaryStatus: readinessCanary?.status ?? null,
           mcpServerAvailable: report.mcpServerAvailable,
           codexLoginChecked: report.codexLoginChecked,
           codexLoginOk: report.codexLoginOk,
@@ -106,6 +110,11 @@ export async function codexReadinessRoutes(
               report.codexDoctorVersion ? `Codex ${report.codexDoctorVersion}` : null,
               report.codexDoctorStatus ? `status ${report.codexDoctorStatus}` : null,
             ].filter(Boolean).join(', ') || undefined,
+          },
+          readinessCanary: {
+            label: 'Codex readiness canary',
+            ok: readinessCanary?.ok ?? null,
+            detail: codexReadinessCanaryDetail(report),
           },
           mcpServer: {
             label: 'AgentForge MCP server',
@@ -149,6 +158,16 @@ function codexExecProbeDetail(report: CodexReadinessReport): string | undefined 
     report.codexExecProbeExitCode !== undefined ? `exit ${report.codexExecProbeExitCode ?? 'null'}` : null,
     report.codexExecProbeDurationMs !== undefined ? `${report.codexExecProbeDurationMs}ms` : null,
     report.codexExecProbeMessage ?? null,
+  ].filter(Boolean).join(', ');
+  return redactReadinessDetail(detail, report.projectRoot);
+}
+
+function codexReadinessCanaryDetail(report: CodexReadinessReport): string | undefined {
+  const readinessCanary = report.codexReadinessCanary;
+  if (!readinessCanary) return undefined;
+  const detail = [
+    `status ${readinessCanary.status}`,
+    readinessCanary.message ?? null,
   ].filter(Boolean).join(', ');
   return redactReadinessDetail(detail, report.projectRoot);
 }
