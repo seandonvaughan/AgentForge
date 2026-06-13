@@ -47,6 +47,20 @@ export interface CodexDoctorCheck {
   remediation?: string | null;
 }
 
+export type CodexReadinessCanaryStatus = 'skipped' | 'passed' | 'failed';
+
+export interface CodexReadinessCanaryOptions {
+  status?: CodexReadinessCanaryStatus;
+  message?: string;
+}
+
+export interface CodexReadinessCanaryResult {
+  checked: boolean;
+  ok: boolean | null;
+  status: CodexReadinessCanaryStatus;
+  message?: string;
+}
+
 export type CodexExecProbeStatus =
   | 'skipped'
   | 'passed'
@@ -99,6 +113,7 @@ export interface CodexReadinessReport {
   codexDoctorVersion?: string;
   codexDoctorChecks?: CodexDoctorCheck[];
   codexDoctorMessage?: string;
+  codexReadinessCanary?: CodexReadinessCanaryResult;
   mcpServerAvailable: boolean;
   mcpServerPath: string;
   codexLoginChecked: boolean;
@@ -122,6 +137,7 @@ export function buildCodexReadinessReport(options: {
   env?: NodeJS.ProcessEnv;
   codexSpawnOptions?: CodexSpawnCommandOptions;
   runCodexExecProbe?: CodexExecProbeRunner;
+  codexReadinessCanary?: CodexReadinessCanaryOptions;
 } = {}): CodexReadinessReport {
   const projectRoot = resolve(options.projectRoot ?? process.cwd());
   const env = options.env ?? process.env;
@@ -147,6 +163,7 @@ export function buildCodexReadinessReport(options: {
     ? { checked: false, ok: null as boolean | null, message: undefined as string | undefined }
     : checkCodexLogin(codexSpawnOptions);
   const codexAuth = resolveCodexAuth(env);
+  const readinessCanary = resolveCodexReadinessCanary(options.codexReadinessCanary, { projectRoot, env });
 
   const warnings: string[] = [];
   if (agents.length === 0) {
@@ -190,6 +207,11 @@ export function buildCodexReadinessReport(options: {
   if (login.checked && login.ok === false) {
     warnings.push(login.message ?? 'codex login status failed.');
   }
+  if (readinessCanary.checked && readinessCanary.ok === false) {
+    warnings.push(readinessCanary.message
+      ? `codex readiness canary failed: ${readinessCanary.message}`
+      : 'codex readiness canary failed.');
+  }
 
   return {
     projectRoot,
@@ -208,6 +230,7 @@ export function buildCodexReadinessReport(options: {
     ...(doctor.version ? { codexDoctorVersion: doctor.version } : {}),
     ...(doctor.checks ? { codexDoctorChecks: doctor.checks } : {}),
     ...(doctor.message ? { codexDoctorMessage: doctor.message } : {}),
+    codexReadinessCanary: readinessCanary,
     mcpServerAvailable,
     mcpServerPath,
     codexLoginChecked: login.checked,
@@ -225,6 +248,26 @@ export function buildCodexReadinessReport(options: {
       && (!doctor.checked || doctor.ok !== false)
       && mcpServerAvailable
       && (!login.checked || login.ok === true),
+  };
+}
+
+function resolveCodexReadinessCanary(
+  canary: CodexReadinessCanaryOptions | undefined,
+  options: { projectRoot: string; env?: NodeJS.ProcessEnv },
+): CodexReadinessCanaryResult {
+  const status = canary?.status ?? 'skipped';
+  const message = canary?.message
+    ? redactCodexReadinessText(canary.message, options)
+    : undefined;
+  const base = {
+    checked: status !== 'skipped',
+    ok: status === 'skipped' ? null : status === 'passed',
+    status,
+  };
+
+  return {
+    ...base,
+    ...(message ? { message } : {}),
   };
 }
 
