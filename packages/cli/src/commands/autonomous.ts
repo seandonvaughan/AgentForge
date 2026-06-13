@@ -1616,6 +1616,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
   const activeStage = inferActiveStage(cycleDir);
   if (cycleJson && !isHeartbeatOnlyCyclePayload(cycleJson)) {
     const cost = (cycleJson.cost ?? {}) as Record<string, unknown>;
+    const budgetUsd = resolveCycleBudgetUsd(cycleDir, cost);
     const tests = (cycleJson.tests ?? {}) as Record<string, unknown>;
     const pr = (cycleJson.pr ?? {}) as Record<string, unknown>;
     const agentPr = latestCycleAgentPr(cycleDir);
@@ -1632,7 +1633,7 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
         new Date(0).toISOString(),
       completedAt: (cycleJson.completedAt as string) ?? null,
       costUsd: Number(cost.totalUsd ?? 0),
-      budgetUsd: Number(cost.budgetUsd ?? 200),
+      budgetUsd,
       testsPassed: Number(tests.passed ?? 0),
       testsTotal: Number(tests.total ?? 0),
       prUrl: typeof pr.url === 'string' && pr.url.length > 0
@@ -1650,13 +1651,45 @@ function summarizeCycle(cycleDir: string, cycleId: string): CycleSummary | null 
     startedAt: safeStatDate(cycleDir) ?? new Date(0).toISOString(),
     completedAt: null,
     costUsd: 0,
-    budgetUsd: 200,
+    budgetUsd: resolveCycleBudgetUsd(cycleDir),
     testsPassed: 0,
     testsTotal: 0,
     prUrl: null,
     hasApprovalPending,
     approvalDecision,
   };
+}
+
+function resolveCycleBudgetUsd(cycleDir: string, cost: Record<string, unknown> = {}): number {
+  return firstFiniteNonNegativeNumber(
+    cost['budgetUsd'],
+    readTopLevelNumber(join(cycleDir, 'objective.json'), 'budgetUsd'),
+    readNestedNumber(join(cycleDir, 'decomposition.json'), 'budget', 'budgetUsd'),
+    readTopLevelNumber(join(cycleDir, 'plan.json'), 'budget'),
+    readTopLevelNumber(join(cycleDir, 'checkpoint-cycle.json'), 'budgetUsd'),
+  ) ?? 200;
+}
+
+function readTopLevelNumber(path: string, field: string): unknown {
+  const payload = readJsonIfExists(path) as Record<string, unknown> | null;
+  return payload?.[field];
+}
+
+function readNestedNumber(path: string, parent: string, field: string): unknown {
+  const payload = readJsonIfExists(path) as Record<string, unknown> | null;
+  const nested = payload?.[parent];
+  return nested && typeof nested === 'object'
+    ? (nested as Record<string, unknown>)[field]
+    : undefined;
+}
+
+function firstFiniteNonNegativeNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function latestCycleAgentPr(cycleDir: string): AgentPrLedgerEntry | null {
