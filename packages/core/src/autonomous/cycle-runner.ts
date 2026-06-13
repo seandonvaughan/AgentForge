@@ -821,6 +821,7 @@ export interface MultiPrBranchVerificationRun {
   branch: string;
   agentId?: string;
   itemId?: string;
+  changedFiles?: string[];
 }
 
 export interface MultiPrBranchVerificationEntry {
@@ -951,7 +952,7 @@ function parseMultiPrVerifyCommandOverride(raw: string | undefined): string[] | 
     .filter((cmd) => cmd.length > 0);
 }
 
-function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerificationRun[] {
+export function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerificationRun[] {
   const execPath = join(cwd, '.agentforge/cycles', cycleId, 'phases/execute.json');
   if (!existsSync(execPath)) return [];
 
@@ -978,14 +979,40 @@ function readMultiPrBranchRuns(cwd: string, cycleId: string): MultiPrBranchVerif
     seen.add(branch);
     const agentId = typeof run['agentId'] === 'string' ? run['agentId'] : undefined;
     const itemId = typeof run['itemId'] === 'string' ? run['itemId'] : undefined;
+    const changedFiles = Array.isArray(run['worktreeChangedFiles'])
+      ? run['worktreeChangedFiles']
+        .map((file) => typeof file === 'string' ? file.trim() : '')
+        .filter((file) => file.length > 0)
+      : undefined;
     runs.push({
       branch,
       ...(agentId !== undefined ? { agentId } : {}),
       ...(itemId !== undefined ? { itemId } : {}),
+      ...(changedFiles !== undefined && changedFiles.length > 0 ? { changedFiles } : {}),
     });
   }
 
   return runs;
+}
+
+export function buildMultiPrBranchVerificationEnvOverrides(
+  run: MultiPrBranchVerificationRun,
+  baseBranch: string,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  if (env['AGENTFORGE_MULTIPR_VERIFY_USE_AUTHORITATIVE_FILES'] === '0') {
+    return {};
+  }
+
+  const overrides: NodeJS.ProcessEnv = {};
+  const trimmedBaseBranch = baseBranch.trim();
+  if (trimmedBaseBranch.length > 0) {
+    overrides['AUTONOMOUS_BASE_BRANCH'] = trimmedBaseBranch;
+  }
+  if (run.changedFiles && run.changedFiles.length > 0) {
+    overrides['AGENTFORGE_CHANGED_FILES'] = run.changedFiles.join('\n');
+  }
+  return overrides;
 }
 
 export function multiPrVerifyCommands(testing: CycleConfig['testing']): string[] {
@@ -1082,6 +1109,7 @@ export async function execCommandInDir(
   cwd: string,
   command: string,
   timeoutMs: number,
+  envOverrides: NodeJS.ProcessEnv = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const parts = parseCommandArgs(command);
   if (parts.length === 0) return { stdout: '', stderr: '' };
@@ -1090,7 +1118,7 @@ export async function execCommandInDir(
     cwd,
     timeout: timeoutMs,
     maxBuffer: 50 * 1024 * 1024,
-    env: buildVerificationSubprocessEnv(),
+    env: buildVerificationSubprocessEnv(process.env, envOverrides),
     windowsHide: true,
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
   });
@@ -1262,6 +1290,7 @@ export async function verifyMultiPrAgentBranches(opts: {
         ),
       );
 
+      const envOverrides = buildMultiPrBranchVerificationEnvOverrides(run, opts.baseBranch);
       for (let commandIndex = 0; commandIndex < commands.length; commandIndex++) {
         const command = commands[commandIndex]!;
         try {
@@ -1274,7 +1303,7 @@ export async function verifyMultiPrAgentBranches(opts: {
             commandsCompleted: commandIndex,
             durationMs: Date.now() - startedAt,
           });
-          await execCommandInDir(worktreePath, command, timeoutMs);
+          await execCommandInDir(worktreePath, command, timeoutMs, envOverrides);
           update({
             ...baseEntry,
             status: 'running',

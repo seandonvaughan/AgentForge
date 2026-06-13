@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -104,6 +105,46 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     expect(summary.workers).toBe(2);
     expect(summary.availableMemoryGb).toBe(0.1);
     expect(summary.availableMemorySource).toBe('env:AGENTFORGE_VERIFY_AVAILABLE_GB');
+  });
+
+  it('uses AUTONOMOUS_BASE_BRANCH before autonomous.yaml git.baseBranch for diff fallback', () => {
+    execFileSync('git', ['init', '-b', 'main'], { cwd: fixture, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: fixture });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: fixture });
+    execFileSync('git', ['add', '.'], { cwd: fixture });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: fixture, stdio: 'ignore' });
+
+    execFileSync('git', ['checkout', '-b', 'codex/recovery-canary-cycle'], { cwd: fixture, stdio: 'ignore' });
+    writeFileSync(join(fixture, 'recovery.txt'), 'recovery\n', 'utf8');
+    execFileSync('git', ['add', 'recovery.txt'], { cwd: fixture });
+    execFileSync('git', ['commit', '-m', 'recovery'], { cwd: fixture, stdio: 'ignore' });
+
+    execFileSync('git', ['checkout', '-b', 'codex/agent-coder-one'], { cwd: fixture, stdio: 'ignore' });
+    writeFileSync(join(fixture, 'DISPOSITION_LOG.md'), '- canary\n', 'utf8');
+    execFileSync('git', ['add', 'DISPOSITION_LOG.md'], { cwd: fixture });
+    execFileSync('git', ['commit', '-m', 'agent change'], { cwd: fixture, stdio: 'ignore' });
+    writeFileSync(
+      join(fixture, '.agentforge', 'autonomous.yaml'),
+      'git:\n  baseBranch: main\ntesting:\n  affectedMode: full\n  memory:\n    reserveGb: 1\n    perWorkerGb: 1\n    heapCapMb: 1024\n',
+      'utf8',
+    );
+
+    const res = spawnSync(process.execPath, [RUNNER], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        AUTONOMOUS_BASE_BRANCH: 'codex/recovery-canary-cycle',
+        AGENTFORGE_CHANGED_FILES: '',
+        AGENTFORGE_VERIFY_SUMMARY_DIR: fixture,
+      },
+    });
+
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toContain('baseBranch=codex/recovery-canary-cycle');
+    const summary = JSON.parse(readFileSync(join(fixture, 'verify-gate-summary.json'), 'utf8'));
+    expect(summary.baseBranch).toBe('codex/recovery-canary-cycle');
+    expect(summary.changedFileCount).toBe(1);
   });
 
   it('fails related mode with summary findings when package and dashboard tests are not selected', () => {

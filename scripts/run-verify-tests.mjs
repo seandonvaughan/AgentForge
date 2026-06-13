@@ -296,7 +296,12 @@ function runVitest(args, heapCapMb) {
 function main() {
   const conf = loadAutonomousYaml();
   const cfg = resolveVerifyConfig(conf.testing);
-  const baseBranch = conf.git && typeof conf.git.baseBranch === 'string' ? conf.git.baseBranch : 'main';
+  const envBaseBranch = process.env.AUTONOMOUS_BASE_BRANCH?.trim();
+  const baseBranch = envBaseBranch && envBaseBranch.length > 0
+    ? envBaseBranch
+    : conf.git && typeof conf.git.baseBranch === 'string'
+      ? conf.git.baseBranch
+      : 'main';
 
   const changedFiles = getChangedFiles(baseBranch);
   const cycleIndexRaw = Number.parseInt(process.env.AGENTFORGE_CYCLE_INDEX ?? '', 10);
@@ -327,6 +332,7 @@ function main() {
 
   console.error(
     `[verify-gate] mode=${mode} workers=${workers} baseWorkers=${baseWorkers} minWorkers=${minWorkers} ` +
+      `baseBranch=${baseBranch} ` +
       `changedFiles=${changedFiles.length} availableGb=${memory.availableGb.toFixed(1)} ` +
       `availableSource=${memory.source} freeGb=${memory.freeGb.toFixed(1)} totalGb=${memory.totalGb.toFixed(1)} ` +
       `cores=${cores} reserveGb=${cfg.reserveGb} perWorkerGb=${cfg.perWorkerGb} ` +
@@ -348,6 +354,7 @@ function main() {
     const exitCode = 1;
     const summary = {
       mode,
+      baseBranch,
       workers,
       baseWorkers,
       minWorkers,
@@ -392,6 +399,7 @@ function main() {
   const exitCode = code ?? (signal ? 1 : 0);
   const summary = {
     mode,
+    baseBranch,
     workers,
     baseWorkers,
     minWorkers,

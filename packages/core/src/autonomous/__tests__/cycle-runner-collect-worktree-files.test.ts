@@ -32,8 +32,10 @@ import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   collectFilesFromAgentBranches,
+  buildMultiPrBranchVerificationEnvOverrides,
   execCommandInDir,
   multiPrVerifyCommands,
+  readMultiPrBranchRuns,
   verificationWorktreeName,
   verifyMultiPrAgentBranches,
 } from '../cycle-runner.js';
@@ -511,6 +513,99 @@ describe('verifyMultiPrAgentBranches', () => {
         process.env['AGENTFORGE_UNATTENDED'] = previous;
       }
     }
+  });
+
+  it('scrubs scoped verification env unless explicitly overridden', async () => {
+    const previousChangedFiles = process.env['AGENTFORGE_CHANGED_FILES'];
+    const previousBaseBranch = process.env['AUTONOMOUS_BASE_BRANCH'];
+    process.env['AGENTFORGE_CHANGED_FILES'] = 'ambient.ts';
+    process.env['AUTONOMOUS_BASE_BRANCH'] = 'ambient-base';
+
+    try {
+      const result = await execCommandInDir(
+        process.cwd(),
+        'node -e "console.log(`${process.env.AGENTFORGE_CHANGED_FILES || 0}:${process.env.AUTONOMOUS_BASE_BRANCH || 0}`)"',
+        10_000,
+      );
+      expect(result.stdout.trim()).toBe('0:0');
+    } finally {
+      if (previousChangedFiles === undefined) {
+        delete process.env['AGENTFORGE_CHANGED_FILES'];
+      } else {
+        process.env['AGENTFORGE_CHANGED_FILES'] = previousChangedFiles;
+      }
+      if (previousBaseBranch === undefined) {
+        delete process.env['AUTONOMOUS_BASE_BRANCH'];
+      } else {
+        process.env['AUTONOMOUS_BASE_BRANCH'] = previousBaseBranch;
+      }
+    }
+  });
+
+  it('passes per-branch verification env overrides into commands', async () => {
+    const result = await execCommandInDir(
+      process.cwd(),
+      'node -e "console.log(`${process.env.AGENTFORGE_CHANGED_FILES}:${process.env.AUTONOMOUS_BASE_BRANCH}:${process.env.CI}:${process.env.NO_COLOR}`)"',
+      10_000,
+      {
+        AGENTFORGE_CHANGED_FILES: 'DISPOSITION_LOG.md',
+        AUTONOMOUS_BASE_BRANCH: 'codex/recovery-canary-cycle',
+      },
+    );
+
+    expect(result.stdout.trim()).toBe('DISPOSITION_LOG.md:codex/recovery-canary-cycle:1:1');
+  });
+
+  it('records itemResult worktreeChangedFiles for multi-PR verification', () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'cr-verify-files-'));
+    try {
+      const phasesDir = writePhasesDir(workDir, 'test-cycle-verify-files');
+      writeFileSync(join(phasesDir, 'execute.json'), JSON.stringify({
+        itemResults: [
+          {
+            itemId: 'item-1',
+            agentId: 'coder',
+            worktreeBranch: 'codex/agent-coder-one',
+            worktreeChangedFiles: ['DISPOSITION_LOG.md', '  docs/runtime-modes.md  ', 42, ''],
+          },
+        ],
+      }));
+
+      expect(readMultiPrBranchRuns(workDir, 'test-cycle-verify-files')).toEqual([
+        {
+          branch: 'codex/agent-coder-one',
+          agentId: 'coder',
+          itemId: 'item-1',
+          changedFiles: ['DISPOSITION_LOG.md', 'docs/runtime-modes.md'],
+        },
+      ]);
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('builds authoritative changed-file env overrides for multi-PR branch verification', () => {
+    expect(buildMultiPrBranchVerificationEnvOverrides({
+      branch: 'codex/agent-coder-one',
+      changedFiles: ['DISPOSITION_LOG.md'],
+    }, 'codex/recovery-canary-cycle')).toEqual({
+      AGENTFORGE_CHANGED_FILES: 'DISPOSITION_LOG.md',
+      AUTONOMOUS_BASE_BRANCH: 'codex/recovery-canary-cycle',
+    });
+
+    expect(buildMultiPrBranchVerificationEnvOverrides({
+      branch: 'codex/agent-coder-one',
+    }, 'codex/recovery-canary-cycle')).toEqual({
+      AUTONOMOUS_BASE_BRANCH: 'codex/recovery-canary-cycle',
+    });
+  });
+
+  it('can disable authoritative changed-file env for branch verification', () => {
+    expect(buildMultiPrBranchVerificationEnvOverrides(
+      { branch: 'codex/agent-coder-one', changedFiles: ['DISPOSITION_LOG.md'] },
+      'codex/recovery-canary-cycle',
+      { AGENTFORGE_MULTIPR_VERIFY_USE_AUTHORITATIVE_FILES: '0' },
+    )).toEqual({});
   });
 
   it('treats itemResults worktreeBranch entries as branch verification work', async () => {
