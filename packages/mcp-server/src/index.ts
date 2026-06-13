@@ -211,7 +211,7 @@ server.tool(
 server.tool(
   'af_codex_readiness',
   'Return the same AgentForge Codex readiness report as `agentforge codex readiness --json`. ' +
-    'Read-only; optionally provide projectRoot and skipLogin.',
+    'Read-only; optionally provide projectRoot, skipLogin, and includeDoctor diagnostics.',
   {
     projectRoot: z
       .string()
@@ -224,9 +224,17 @@ server.tool(
       .optional()
       .default(false)
       .describe('Skip `codex login status` check'),
+    includeDoctor: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Include `codex doctor --json` diagnostics; omitted by default because doctor can be slower'),
   },
-  async ({ projectRoot, skipLogin }) => {
-    const result = await afCodexReadiness({ projectRoot, skipLogin: skipLogin ?? false }, PROJECT_ROOT);
+  async ({ projectRoot, skipLogin, includeDoctor }) => {
+    const result = await afCodexReadiness(
+      { projectRoot, skipLogin: skipLogin ?? false, includeDoctor: includeDoctor ?? false },
+      PROJECT_ROOT,
+    );
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
       ...(result.ok ? {} : { isError: true }),

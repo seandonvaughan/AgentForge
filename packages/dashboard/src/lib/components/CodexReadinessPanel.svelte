@@ -81,7 +81,12 @@
     <div class:compact-grid={compact} class="check-grid">
       {#each Object.entries(readiness.checks) as [key, check] (key)}
         <div class="check-row">
-          <span class="check-label">{check.label}</span>
+          <span class="check-copy">
+            <span class="check-label">{check.label}</span>
+            {#if check.detail && !compact}
+              <span class="check-detail">{check.detail}</span>
+            {/if}
+          </span>
           <Badge variant={checkVariant(check.ok)}>
             {check.ok === null ? 'skipped' : check.ok ? 'ok' : 'fail'}
           </Badge>
@@ -138,18 +143,29 @@
     grid-template-columns: 1fr;
   }
   .check-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
     gap: 8px;
     padding: 8px 10px;
     border: 1px solid var(--af-border2);
     border-radius: 6px;
     background: var(--af-surface2);
   }
+  .check-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
   .check-label {
     color: var(--af-muted);
     font-size: 12px;
+  }
+  .check-detail {
+    color: var(--af-text);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
   }
   .warning-list {
     display: flex;

@@ -1,5 +1,32 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const fsMockState = vi.hoisted(() => ({
+  existingPaths: new Set<string>(),
+  files: new Map<string, string>(),
+  directories: new Map<string, string[]>(),
+  realpaths: new Map<string, string>(),
+}));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    existsSync: vi.fn((path: string) => fsMockState.existingPaths.has(path)),
+    readFileSync: vi.fn((path: string) => {
+      const value = fsMockState.files.get(path);
+      if (value === undefined) throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' });
+      return value;
+    }),
+    readdirSync: vi.fn((path: string) => {
+      const value = fsMockState.directories.get(path);
+      if (value === undefined) throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' });
+      return value;
+    }),
+    realpathSync: vi.fn((path: string) => fsMockState.realpaths.get(path) ?? path),
+  };
+});
+
 import {
   CODEX_NO_FINAL_MESSAGE_RETRY_DELAYS_MS,
   CODEX_VERSION_OUTPUT_PATTERN,
@@ -12,6 +39,7 @@ import {
   resolveCodexCliPathFromConfig,
   verifyCodexBinaryIdentity,
 } from '../transports/codex-cli-transport.js';
+import { buildCodexReadinessReport } from '../codex-readiness.js';
 import { TransportInvalidRequestError } from '../transport-errors.js';
 import type { ExecutionRequest, ExecutionStreamOptions } from '../types.js';
 
@@ -65,6 +93,45 @@ const GOOD_INVOCATION: MockCodexInvocationResult = {
 
 function identityRealpath(path: string): string {
   return path;
+}
+
+function resetMockFilesystem(): void {
+  fsMockState.existingPaths.clear();
+  fsMockState.files.clear();
+  fsMockState.directories.clear();
+  fsMockState.realpaths.clear();
+}
+
+function addReadinessProject(projectRoot: string): { projectRoot: string; mcpServerPath: string } {
+  const resolvedProjectRoot = resolve(projectRoot);
+  const agentsDir = join(resolvedProjectRoot, '.agentforge', 'agents');
+  const agentPath = join(agentsDir, 'coder.yaml');
+  const mcpServerPath = join(resolvedProjectRoot, 'packages', 'mcp-server', 'dist', 'index.js');
+
+  fsMockState.directories.set(agentsDir, ['coder.yaml']);
+  fsMockState.files.set(
+    agentPath,
+    ['name: Coder', 'model: sonnet', 'system_prompt: You write code.', ''].join('\n'),
+  );
+  fsMockState.existingPaths.add(mcpServerPath);
+
+  return { projectRoot: resolvedProjectRoot, mcpServerPath };
+}
+
+function expectReadinessExecArgs(projectRoot: string): string[] {
+  return [
+    '--ask-for-approval',
+    'never',
+    'exec',
+    '--ignore-user-config',
+    '--ignore-rules',
+    '--json',
+    '--cd',
+    projectRoot,
+    '--sandbox',
+    'read-only',
+    '--skip-git-repo-check',
+  ];
 }
 
 describe('resolveCodexBinary', () => {
@@ -343,6 +410,144 @@ describe('buildCodexSpawnCommand binary resolution', () => {
     });
 
     expect(command.command).toBe('codex');
+  });
+});
+
+describe('buildCodexReadinessReport exec probe transport resolution', () => {
+  beforeEach(() => {
+    resetMockFilesystem();
+  });
+
+  afterEach(() => {
+    resetMockFilesystem();
+  });
+
+  it('runs the exec probe through the explicit Codex binary with the exact preflight args', () => {
+    const { projectRoot, mcpServerPath } = addReadinessProject(join('C:\\', 'repo', 'agentforge'));
+    const runCodexExecProbe = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkDoctor: false,
+      checkLogin: false,
+      codexCliAvailable: true,
+      mcpServerPath,
+      env: {
+        AGENTFORGE_CODEX_BIN: 'C:\\tools\\codex.exe',
+        PATH: 'C:\\Windows\\System32',
+      },
+      codexSpawnOptions: {
+        platform: 'win32',
+        arch: 'x64',
+        candidates: ['C:\\ignored\\codex.cmd'],
+      },
+      runCodexExecProbe,
+    });
+
+    expect(report.codexCliLaunchKind).toBe('path-command');
+    expect(report.codexExecProbeStatus).toBe('passed');
+    expect(report.codexExecProbeLaunchKind).toBe('path-command');
+    expect(runCodexExecProbe).toHaveBeenCalledTimes(1);
+    expect(runCodexExecProbe).toHaveBeenCalledWith(
+      'C:\\tools\\codex.exe',
+      expectReadinessExecArgs(projectRoot),
+      expect.objectContaining({
+        encoding: 'utf8',
+        input: 'Reply with exactly: agentforge-codex-readiness-ok',
+        timeout: 30_000,
+        windowsHide: true,
+        env: expect.objectContaining({
+          AGENTFORGE_CODEX_BIN: 'C:\\tools\\codex.exe',
+        }),
+      }),
+    );
+  });
+
+  it('runs the exec probe through the Windows native package instead of the npm shim', () => {
+    const { projectRoot, mcpServerPath } = addReadinessProject(join('C:\\', 'repo', 'agentforge'));
+    const npmRoot = join('C:\\', 'tools', 'npm');
+    const packageRoot = join(npmRoot, 'node_modules', '@openai', 'codex');
+    const entrypoint = join(packageRoot, 'bin', 'codex.js');
+    const archRoot = join(
+      packageRoot,
+      'node_modules',
+      '@openai',
+      'codex-win32-x64',
+      'vendor',
+      'x86_64-pc-windows-msvc',
+    );
+    const nativeExe = join(archRoot, 'codex', 'codex.exe');
+    const pathDir = join(archRoot, 'path');
+    const cmdShim = join(npmRoot, 'codex.cmd');
+    const packageRealpath = join('C:\\', 'real', 'npm', 'node_modules', '@openai', 'codex');
+    const runCodexExecProbe = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));
+
+    fsMockState.existingPaths.add(entrypoint);
+    fsMockState.existingPaths.add(nativeExe);
+    fsMockState.existingPaths.add(pathDir);
+    fsMockState.realpaths.set(packageRoot, packageRealpath);
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkDoctor: false,
+      checkLogin: false,
+      codexCliAvailable: true,
+      mcpServerPath,
+      env: { PATH: 'C:\\Windows\\System32' },
+      codexSpawnOptions: {
+        platform: 'win32',
+        arch: 'x64',
+        candidates: [cmdShim],
+      },
+      runCodexExecProbe,
+    });
+
+    expect(report.codexCliLaunchKind).toBe('windows-native-package');
+    expect(report.codexExecProbeStatus).toBe('passed');
+    expect(report.codexExecProbeLaunchKind).toBe('windows-native-package');
+    expect(runCodexExecProbe).toHaveBeenCalledTimes(1);
+    expect(runCodexExecProbe).toHaveBeenCalledWith(
+      nativeExe,
+      expectReadinessExecArgs(projectRoot),
+      expect.objectContaining({
+        encoding: 'utf8',
+        input: 'Reply with exactly: agentforge-codex-readiness-ok',
+        timeout: 30_000,
+        windowsHide: true,
+        env: expect.objectContaining({
+          CODEX_MANAGED_BY_NPM: '1',
+          CODEX_MANAGED_PACKAGE_ROOT: packageRealpath,
+          PATH: expect.stringContaining(pathDir),
+        }),
+      }),
+    );
+  });
+
+  it('marks the exec probe unresolved and never runs an ambiguous WindowsApps shim fallback', () => {
+    const { projectRoot, mcpServerPath } = addReadinessProject(join('C:\\', 'repo', 'agentforge'));
+    const runCodexExecProbe = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkDoctor: false,
+      checkLogin: false,
+      codexCliAvailable: true,
+      mcpServerPath,
+      env: { PATH: 'C:\\Users\\Agent\\AppData\\Local\\Microsoft\\WindowsApps' },
+      codexSpawnOptions: {
+        platform: 'win32',
+        arch: 'x64',
+        candidates: ['C:\\Users\\Agent\\AppData\\Local\\Microsoft\\WindowsApps\\codex.exe'],
+      },
+      runCodexExecProbe,
+    });
+
+    expect(report.codexCliLaunchKind).toBeUndefined();
+    expect(report.codexExecProbeChecked).toBe(true);
+    expect(report.codexExecProbeOk).toBe(false);
+    expect(report.codexExecProbeStatus).toBe('resolution-error');
+    expect(report.codexExecProbeMessage).toMatch(/refuses ambiguous WindowsApps\/npm-shim fallback/i);
+    expect(runCodexExecProbe).not.toHaveBeenCalled();
   });
 });
 
