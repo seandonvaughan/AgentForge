@@ -280,6 +280,25 @@ describe('cycle list/show summaries', () => {
     expect(output()).not.toContain('Cycle:');
   });
 
+  it('uses the persisted objective budget when live cycle cost has no budget field', async () => {
+    const cycleId = '7b7b7b7b-7777-4777-8777-777777777777';
+    const cycleDir = writeCycle(cycleId, {
+      cycleId,
+      stage: 'run',
+      startedAt: '2026-05-20T00:00:00.000Z',
+      cost: { totalUsd: 3.5 },
+    });
+    writeFileSync(join(cycleDir, 'objective.json'), JSON.stringify({
+      id: 'epic-budget-test',
+      title: 'Budget display regression',
+      budgetUsd: 225,
+    }, null, 2));
+
+    await runCli('cycle', 'show', cycleId, '--project-root', projectRoot);
+
+    expect(output()).toContain('Cost:         $3.5000 / $225.00');
+  });
+
   it('includes latest agent PR fallback metadata in cycle show JSON', async () => {
     const cycleId = '88888888-8888-4888-8888-888888888888';
     const cycleDir = writeCycle(cycleId, {
