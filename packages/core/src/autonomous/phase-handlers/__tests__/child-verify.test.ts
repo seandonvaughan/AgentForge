@@ -449,6 +449,41 @@ describe('verifyChildWorktree — force-includes a newly-added test file (PR #25
   });
 });
 
+describe('verifyChildWorktree — package/dashboard test discoverability', () => {
+  it('fails package source-only changes when vitest related resolves no tests', async () => {
+    const { runner, calls } = runnerWith({
+      tests: { ok: false, code: 1, output: 'No test files found, exiting with code 1' },
+    });
+    const result = await verifyChildWorktree({
+      worktreePath: '/tmp/wt',
+      changedFiles: ['packages/core/src/autonomous/feature.ts'],
+      declaredFiles: ['packages/core/src/autonomous/feature.ts'],
+      runner,
+    });
+
+    expect(calls.some((c) => c.args.includes('related'))).toBe(true);
+    expect(result.ok).toBe(false);
+    const finding = result.failures.find((f) => f.check === 'test-discoverability');
+    expect(finding).toBeDefined();
+    expect(finding!.message).toContain('verifier-discoverable test file');
+    expect(finding!.message).toContain('vitest related');
+    expect(finding!.message).toContain('packages/core/src/autonomous/feature.ts');
+    expect(result.failures.find((f) => f.check === 'tests')).toBeUndefined();
+  });
+
+  it('accepts dashboard source-only changes when vitest related resolves a test', async () => {
+    const result = await verifyChildWorktree({
+      worktreePath: '/tmp/wt',
+      changedFiles: ['packages/dashboard/src/routes/cycles/+page.svelte'],
+      declaredFiles: ['packages/dashboard/src/routes/cycles/+page.svelte'],
+      runner: allGreenRunner,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.failures.find((f) => f.check === 'test-discoverability')).toBeUndefined();
+  });
+});
+
 describe('verifyChildWorktree — runner rejection is captured, never thrown', () => {
   it('records a typecheck failure when the runner throws', async () => {
     const throwingRunner: ChildVerifyCommandRunner = async (_cmd, args) => {

@@ -135,7 +135,15 @@ export function createSerialChildVerifyCommandRunner(
 /** A single deterministic failure (or warning) produced by a child-verify check. */
 export interface ChildVerifyFailure {
   /** Which check produced this entry. */
-  check: 'iron-law' | 'scope' | 'requires-tests' | 'deps' | 'typecheck' | 'tests' | 'ci-config';
+  check:
+    | 'iron-law'
+    | 'scope'
+    | 'requires-tests'
+    | 'test-discoverability'
+    | 'deps'
+    | 'typecheck'
+    | 'tests'
+    | 'ci-config';
   /**
    * Severity. `failure` blocks the child (ok=false). `warning` is advisory and
    * does NOT by itself flip ok to false (e.g. out-of-scope files when no scope
@@ -231,6 +239,16 @@ export function isCiConfigPath(file: string): boolean {
     norm.startsWith('.github/workflows/') ||
     norm.startsWith('scripts/')
   );
+}
+
+function isPackageOrDashboardSourcePath(file: string): boolean {
+  const norm = normalizePath(file);
+  if (isTestFilePath(norm)) return false;
+  const sourceExts = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.svelte', '.css'];
+  if (!sourceExts.some((ext) => norm.endsWith(ext))) return false;
+
+  const parts = norm.split('/');
+  return parts[0] === 'packages' && parts[1] !== undefined && parts[2] === 'src';
 }
 
 /**
@@ -443,6 +461,24 @@ function isDependencyStartupFailure(output: string): boolean {
   );
 }
 
+function isNoRelatedTestFailure(output: string): boolean {
+  const lower = output.toLowerCase();
+  return (
+    lower.includes('no test files found') ||
+    lower.includes('no tests found') ||
+    lower.includes('collected zero tests')
+  );
+}
+
+function formatMissingDiscoverableTestMessage(sourceFiles: string[]): string {
+  return (
+    'Package or dashboard source changes must include a changed verifier-discoverable ' +
+    'test file (*.test.* or *.spec.*) or resolve at least one related test via ' +
+    'vitest related before the child can be accepted. Missing test expectation for: ' +
+    sourceFiles.map(normalizePath).join(', ')
+  );
+}
+
 /**
  * P0.5 — Deterministic per-child verification bar. Runs entirely in code (no LLM):
  *
@@ -487,6 +523,11 @@ export async function verifyChildWorktree(
     return excludeNorm.some((ex) => norm === ex || norm.endsWith('/' + ex));
   };
   const affectedTests = selectChildAffectedFiles(changedFiles).filter((f) => !isExcluded(f));
+  const packageOrDashboardSourceChanges = changedFiles
+    .map(normalizePath)
+    .filter(isPackageOrDashboardSourcePath);
+  const needsDiscoverableRelatedTest =
+    packageOrDashboardSourceChanges.length > 0 && !changedFiles.some(isTestFilePath);
 
   // ── (1) Iron-law: non-empty diff ────────────────────────────────────────
   if (changedFiles.length === 0) {
@@ -637,16 +678,41 @@ export async function verifyChildWorktree(
         }
       }
       if (!res.ok) {
-        failures.push({
-          check: 'tests',
-          severity: 'failure',
-          message:
-            `Scoped affected tests failed (${formatCommandExit(res)}) for ` +
-            `${affectedTests.length} file(s).`,
-          outputTail: tail(res.output),
-        });
+        if (
+          needsDiscoverableRelatedTest &&
+          !runChangedTestsDirectly &&
+          isNoRelatedTestFailure(res.output)
+        ) {
+          failures.push({
+            check: 'test-discoverability',
+            severity: 'failure',
+            message: formatMissingDiscoverableTestMessage(packageOrDashboardSourceChanges),
+            outputTail: tail(res.output),
+          });
+        } else {
+          failures.push({
+            check: 'tests',
+            severity: 'failure',
+            message:
+              `Scoped affected tests failed (${formatCommandExit(res)}) for ` +
+              `${affectedTests.length} file(s).`,
+            outputTail: tail(res.output),
+          });
+        }
       }
+    } else if (needsDiscoverableRelatedTest) {
+      failures.push({
+        check: 'test-discoverability',
+        severity: 'failure',
+        message: formatMissingDiscoverableTestMessage(packageOrDashboardSourceChanges),
+      });
     }
+  } else if (needsDiscoverableRelatedTest) {
+    failures.push({
+      check: 'test-discoverability',
+      severity: 'failure',
+      message: formatMissingDiscoverableTestMessage(packageOrDashboardSourceChanges),
+    });
   }
 
   const ok = !failures.some((f) => f.severity === 'failure');
