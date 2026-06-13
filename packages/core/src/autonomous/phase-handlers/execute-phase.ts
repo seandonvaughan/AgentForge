@@ -52,6 +52,10 @@ import { searchKnowledgeNotes, buildKbPromptBlock } from '../../knowledge/kb-ret
 // knowledge store so other agents' KB retrieval can surface them.
 import { writeKnowledgeEntry } from '../../knowledge/persistence.js';
 import { computeLessonId } from '../../team/engine/learnings/lesson-id.js';
+import {
+  identifyReadinessClaims,
+  isVerifierDiscoverableTestPath,
+} from '../gatekeeper.js';
 // Gem #2 — semantic reranking of memory entries.
 import { rankMemoriesBySemantic } from './semantic-memory.js';
 // Epic-decomposer — wave grouping + local integration-branch orchestration.
@@ -693,6 +697,89 @@ function childRequiresTests(item: { requiresTests?: boolean; tags?: string[] }):
   if (item.requiresTests === true) return true;
   const tags = (item.tags ?? []).map((t) => t.toLowerCase());
   return tags.includes('requires-tests') || tags.includes('tests-required');
+}
+
+const VISIBLE_DASHBOARD_EXTENSIONS = [
+  '.svelte',
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+];
+
+function itemTextForClaims(item: Pick<SprintItem, 'title' | 'description' | 'tags'>): string {
+  return `${item.title} ${item.description ?? ''} ${(item.tags ?? []).join(' ')}`;
+}
+
+function itemHasDashboardReadinessUiClaim(
+  item: Pick<SprintItem, 'title' | 'description' | 'tags'>,
+): boolean {
+  const text = itemTextForClaims(item);
+  const claims = identifyReadinessClaims(text);
+  const lower = text.toLowerCase();
+  const readinessClaim = /\breadiness\b|\bready\b|\bstatus\b|\bhealth\b/.test(lower);
+  return claims.dashboard && (claims.ui || readinessClaim);
+}
+
+function isVisibleDashboardUiSurfacePath(file: string): boolean {
+  const normalized = normalizeScopePath(file);
+  if (!normalized.startsWith('packages/dashboard/src/')) return false;
+  if (isVerifierDiscoverableTestPath(normalized)) return false;
+  if (!VISIBLE_DASHBOARD_EXTENSIONS.some((ext) => normalized.endsWith(ext))) return false;
+  return (
+    normalized.includes('/routes/') ||
+    normalized.includes('/components/') ||
+    normalized.endsWith('.svelte') ||
+    normalized.endsWith('.css') ||
+    normalized.endsWith('.scss') ||
+    normalized.endsWith('.sass') ||
+    normalized.endsWith('.less')
+  );
+}
+
+function visibleDashboardSurfaceHint(item: Pick<SprintItem, 'files'>): string {
+  const declaredVisibleSurfaces = (item.files ?? [])
+    .map(normalizeScopePath)
+    .filter((file) => file.length > 0 && (
+      isVisibleDashboardUiSurfacePath(file) ||
+      file.startsWith('packages/dashboard/src/routes/') ||
+      file.startsWith('packages/dashboard/src/components/')
+    ));
+  if (declaredVisibleSurfaces.length > 0) {
+    return declaredVisibleSurfaces.join(', ');
+  }
+  return 'packages/dashboard/src/routes/**/+page.svelte or packages/dashboard/src/components/**/*.svelte';
+}
+
+function formatDashboardUiClaimGateError(item: SprintItem, changedFiles: string[]): string | null {
+  if (!itemHasDashboardReadinessUiClaim(item)) return null;
+  const visibleDiffs = changedFiles.filter(isVisibleDashboardUiSurfacePath);
+  const discoverableTests = changedFiles.filter(isVerifierDiscoverableTestPath);
+  const hint = visibleDashboardSurfaceHint(item);
+  const changed = changedFiles.length > 0
+    ? changedFiles.map(normalizeScopePath).join(', ')
+    : '(none)';
+  const failures: string[] = [];
+
+  if (visibleDiffs.length === 0) {
+    failures.push(
+      '[scope/failure] Dashboard/readiness UI claims require a visible dashboard diff before completion. ' +
+      `Exercise the claim through ${hint}. Changed files: ${changed}.`,
+    );
+  }
+  if (discoverableTests.length === 0) {
+    failures.push(
+      '[tests/failure] Dashboard/readiness UI claims require discoverable test evidence before completion. ' +
+      `Add or update a verifier-discoverable *.test.* or *.spec.* file that exercises ${hint}.`,
+    );
+  }
+
+  if (failures.length === 0) return null;
+  return `Execute UI claim gate failed:\n${failures.join('\n')}`;
 }
 
 const GENERATED_RUNTIME_PATHS = [
@@ -1697,6 +1784,10 @@ export async function runExecutePhase(
             if (!childResult.ok) {
               throw new Error(formatChildVerifyError(childResult));
             }
+            const uiClaimGateError = formatDashboardUiClaimGateError(item, changedForVerify);
+            if (uiClaimGateError) {
+              throw new Error(uiClaimGateError);
+            }
           }
           item.status = 'completed';
           const runModel =
@@ -2543,7 +2634,11 @@ export function deriveFailureClass(error: string | undefined): FailureClass {
   // Per-child verify markers — most specific first.
   if (lower.includes('[deps/failure]')) return 'deps';
   if (lower.includes('[typecheck/failure]')) return 'typecheck';
-  if (lower.includes('[tests/failure]')) return 'tests';
+  if (
+    lower.includes('[tests/failure]') ||
+    lower.includes('[requires-tests/failure]') ||
+    lower.includes('[test-discoverability/failure]')
+  ) return 'tests';
   if (lower.includes('[scope/failure]')) return 'scope';
   if (lower.includes('[iron-law/failure]') || lower.includes('produced no source changes')) return 'iron-law';
   if (lower.includes('worktree allocation failed') || lower.includes('worktree commit/push failed')) return 'worktree';
@@ -2602,6 +2697,12 @@ This item declares exactly these file or directory scopes:
 ${declaredFiles.map((f) => `- ${f}`).join('\n')}
 Edit ONLY these paths. If a scope is a directory, keep all edits under that directory; creating a declared file or a file under a declared directory is fine. A change outside these paths fails this item automatically. If the task truly cannot be completed without touching an undeclared path, STOP and report the blocker instead of editing it.\n`
       : '';
+  const uiClaimSec = itemHasDashboardReadinessUiClaim(item)
+    ? `\n## Dashboard/readiness UI claim gate
+This item makes a dashboard/readiness UI claim. It cannot complete unless your diff includes BOTH:
+- A visible dashboard surface diff that exercises the claim. Visible dashboard surface to exercise: ${visibleDashboardSurfaceHint(item)}
+- Discoverable test evidence: add or update a verifier-discoverable \`*.test.*\` or \`*.spec.*\` file that covers that visible surface.\n`
+    : '';
   const base = `${gateRetrySec}You are working on sprint item "${item.title}" in the repository at ${cwd}.
 
 Description: ${description}
@@ -2612,6 +2713,7 @@ Your job: use the Read, Write, Edit, Bash, Glob, and Grep tools to make the code
 
 Tooling: ${pkg.toolingNote} Prefer targeted checks first, then broader checks when risk warrants it.
 ${scopeSec}
+${uiClaimSec}
 ## Scope — keep the diff minimal
 Produce the smallest diff that resolves this item. Do not refactor, reformat, or "improve" unrelated code, and do not touch files outside this item's scope. Add or adjust at least one test that fails without your change and passes with it.
 
