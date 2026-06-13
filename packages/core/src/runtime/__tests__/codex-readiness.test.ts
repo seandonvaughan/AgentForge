@@ -1,10 +1,27 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildCodexReadinessReport, redactCodexReadinessText } from '../codex-readiness.js';
 
 const execProbeOk = () => ({ status: 0, stdout: 'agentforge-codex-readiness-ok\n', stderr: '' });
+
+function makeReadyProject(prefix: string): { projectRoot: string; mcpServerPath: string } {
+  const projectRoot = mkdtempSync(join(tmpdir(), prefix));
+  mkdirSync(join(projectRoot, '.agentforge', 'agents'), { recursive: true });
+  writeFileSync(
+    join(projectRoot, '.agentforge', 'agents', 'coder.yaml'),
+    [
+      'name: Coder',
+      'model: sonnet',
+      'system_prompt: You write code.',
+      '',
+    ].join('\n'),
+  );
+  const mcpServerPath = join(projectRoot, 'mcp-server.js');
+  writeFileSync(mcpServerPath, 'console.log("ok");\n');
+  return { projectRoot, mcpServerPath };
+}
 
 describe('buildCodexReadinessReport', () => {
   let projectRoot: string | undefined;
@@ -191,6 +208,91 @@ describe('buildCodexReadinessReport', () => {
     expect(report.codexDoctorStatus).toBe('warning');
     expect(report.codexDoctorVersion).toBe('0.131.0');
     expect(report.warnings.some((warning) => warning.includes('codex doctor warning'))).toBe(true);
+  });
+
+  it('records a passed readiness canary without blocking readiness', () => {
+    const readyProject = makeReadyProject('agentforge-codex-canary-pass-');
+    projectRoot = readyProject.projectRoot;
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkLogin: false,
+      checkDoctor: false,
+      codexCliAvailable: true,
+      mcpServerPath: readyProject.mcpServerPath,
+      env: {},
+      runCodexExecProbe: execProbeOk,
+      codexReadinessCanary: {
+        status: 'passed',
+        message: 'service hardening canary passed',
+      },
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.codexReadinessCanary).toEqual({
+      checked: true,
+      ok: true,
+      status: 'passed',
+      message: 'service hardening canary passed',
+    });
+  });
+
+  it('records a failed readiness canary as a redacted nonblocking warning', () => {
+    const readyProject = makeReadyProject('agentforge-codex-canary-fail-');
+    projectRoot = readyProject.projectRoot;
+    const leakedToken = 'sk-testSECRETSECRET1234567890';
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkLogin: false,
+      checkDoctor: false,
+      codexCliAvailable: true,
+      mcpServerPath: readyProject.mcpServerPath,
+      env: { OPENAI_API_KEY: leakedToken },
+      runCodexExecProbe: execProbeOk,
+      codexReadinessCanary: {
+        status: 'failed',
+        message: `${projectRoot} hardening canary leaked ${leakedToken}`,
+      },
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.codexReadinessCanary).toMatchObject({
+      checked: true,
+      ok: false,
+      status: 'failed',
+    });
+    expect(report.codexReadinessCanary?.message).toContain('[project-root]');
+    expect(report.codexReadinessCanary?.message).toContain('[redacted-secret]');
+    expect(report.codexReadinessCanary?.message).not.toContain(projectRoot);
+    expect(report.codexReadinessCanary?.message).not.toContain(leakedToken);
+    expect(report.warnings.some((warning) => warning.includes('[redacted-secret]'))).toBe(true);
+  });
+
+  it('records a skipped readiness canary without requiring a Codex exec subprocess', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'agentforge-codex-canary-skip-'));
+    const runCodexExecProbe = vi.fn(execProbeOk);
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkLogin: false,
+      checkDoctor: false,
+      codexCliAvailable: false,
+      env: {},
+      runCodexExecProbe,
+      codexReadinessCanary: {
+        status: 'skipped',
+        message: 'canary disabled in this environment',
+      },
+    });
+
+    expect(report.codexReadinessCanary).toEqual({
+      checked: false,
+      ok: null,
+      status: 'skipped',
+      message: 'canary disabled in this environment',
+    });
+    expect(runCodexExecProbe).not.toHaveBeenCalled();
   });
 
   it('fails readiness with a redacted warning when codex exec preflight fails', () => {

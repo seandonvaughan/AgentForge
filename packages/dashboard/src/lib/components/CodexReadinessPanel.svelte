@@ -18,11 +18,16 @@
     warnings: string[];
   }
 
+  type CheckState = 'ok' | 'fail' | 'skipped';
+
   let { title = 'CODEX READINESS', compact = false }: { title?: string; compact?: boolean } = $props();
 
   let readiness: ReadinessData | null = $state(null);
   let loading = $state(true);
   let error: string | null = $state(null);
+  let visibleWarnings = $derived(readiness
+    ? readiness.warnings.filter((warning) => !compact || isReadinessEvidenceWarning(warning)).slice(0, 3)
+    : []);
 
   async function loadReadiness(): Promise<void> {
     loading = true;
@@ -45,6 +50,30 @@
     return 'muted';
   }
 
+  function checkState(ok: boolean | null): CheckState {
+    if (ok === true) return 'ok';
+    if (ok === false) return 'fail';
+    return 'skipped';
+  }
+
+  function shouldShowCheckDetail(
+    check: { ok: boolean | null; label: string; detail?: string },
+  ): boolean {
+    return Boolean(check.detail) && (!compact || check.ok === false || isReadinessCanaryLabel(check.label));
+  }
+
+  function isReadinessCanaryLabel(label: string): boolean {
+    return label.toLowerCase().includes('readiness canary');
+  }
+
+  function isReadinessEvidenceWarning(warning: string): boolean {
+    const lower = warning.toLowerCase();
+    return lower.includes('readiness canary')
+      || lower.includes('dashboard-readiness')
+      || lower.includes('dashboard readiness')
+      || lower.includes('diff');
+  }
+
   function readinessColor(value: ReadinessData): string {
     return value.ready ? 'var(--af-success)' : 'var(--af-warning)';
   }
@@ -53,58 +82,73 @@
 </script>
 
 <Card>
-  <div class="readiness-head">
-    <div>
-      <p class="section-title">{title}</p>
-      {#if readiness}
-        <div class="status-row">
-          <PulseDot color={readinessColor(readiness)} size={7} ring={readiness.ready} />
-          <span class="status-text" style="color:{readinessColor(readiness)}">
-            {readiness.ready ? 'Ready' : 'Needs attention'}
-          </span>
-          <Badge variant={readiness.ready ? 'success' : 'warning'}>
-            {readiness.summary.agentCount} agents
-          </Badge>
-        </div>
-      {:else}
-        <div class="muted">{loading ? 'Checking Codex runtime...' : 'Codex readiness unavailable'}</div>
-      {/if}
-    </div>
-    <Btn size="sm" onClick={() => void loadReadiness()} disabled={loading}>
-      {loading ? 'Checking...' : 'Refresh'}
-    </Btn>
-  </div>
-
-  {#if error}
-    <div class="readiness-error">{error}</div>
-  {:else if readiness}
-    <div class:compact-grid={compact} class="check-grid">
-      {#each Object.entries(readiness.checks) as [key, check] (key)}
-        <div class="check-row">
-          <span class="check-copy">
-            <span class="check-label">{check.label}</span>
-            {#if check.detail && !compact}
-              <span class="check-detail">{check.detail}</span>
-            {/if}
-          </span>
-          <Badge variant={checkVariant(check.ok)}>
-            {check.ok === null ? 'skipped' : check.ok ? 'ok' : 'fail'}
-          </Badge>
-        </div>
-      {/each}
+  <div
+    class="readiness-panel"
+    data-readiness-panel
+    data-readiness-status={readiness?.status ?? (loading ? 'checking' : 'unavailable')}
+  >
+    <div class="readiness-head">
+      <div>
+        <p class="section-title">{title}</p>
+        {#if readiness}
+          <div class="status-row">
+            <PulseDot color={readinessColor(readiness)} size={7} ring={readiness.ready} />
+            <span class="status-text" style="color:{readinessColor(readiness)}">
+              {readiness.ready ? 'Ready' : 'Needs attention'}
+            </span>
+            <Badge variant={readiness.ready ? 'success' : 'warning'}>
+              {readiness.summary.agentCount} agents
+            </Badge>
+          </div>
+        {:else}
+          <div class="muted">{loading ? 'Checking Codex runtime...' : 'Codex readiness unavailable'}</div>
+        {/if}
+      </div>
+      <Btn size="sm" onClick={() => void loadReadiness()} disabled={loading}>
+        {loading ? 'Checking...' : 'Refresh'}
+      </Btn>
     </div>
 
-    {#if readiness.warnings.length > 0 && !compact}
-      <div class="warning-list">
-        {#each readiness.warnings.slice(0, 3) as warning}
-          <div class="warning-item">{warning}</div>
+    {#if error}
+      <div class="readiness-error">{error}</div>
+    {:else if readiness}
+      <div class:compact-grid={compact} class="check-grid">
+        {#each Object.entries(readiness.checks) as [key, check] (key)}
+          <div
+            class="check-row"
+            data-readiness-check={key}
+            data-readiness-check-state={checkState(check.ok)}
+          >
+            <span class="check-copy">
+              <span class="check-label">{check.label}</span>
+              {#if shouldShowCheckDetail(check)}
+                <span class="check-detail" data-readiness-detail={key}>{check.detail}</span>
+              {/if}
+            </span>
+            <Badge variant={checkVariant(check.ok)}>
+              {checkState(check.ok)}
+            </Badge>
+          </div>
         {/each}
       </div>
+
+      {#if visibleWarnings.length > 0}
+        <div class="warning-list" data-readiness-evidence>
+          <div class="warning-title">Readiness evidence</div>
+          {#each visibleWarnings as warning, i}
+            <div class="warning-item" data-readiness-warning data-readiness-warning-index={i}>{warning}</div>
+          {/each}
+        </div>
+      {/if}
     {/if}
-  {/if}
+  </div>
 </Card>
 
 <style>
+  .readiness-panel {
+    display: grid;
+    gap: 0;
+  }
   .readiness-head {
     display: flex;
     align-items: flex-start;
@@ -172,6 +216,13 @@
     flex-direction: column;
     gap: 6px;
     margin-top: 10px;
+  }
+  .warning-title {
+    color: var(--af-muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .warning-item,
   .readiness-error {
