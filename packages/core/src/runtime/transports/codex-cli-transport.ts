@@ -1,9 +1,9 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix as posixPath, resolve, win32 as win32Path } from 'node:path';
 import { getRequestModelProfile } from '../model-profiles.js';
 import { estimateOpenAiCostUsd } from '../openai-pricing.js';
 import { normalizeStrictOutputSchema } from '../output-schema.js';
@@ -856,10 +856,19 @@ export interface CodexSpawnCommandOptions {
   homeDir?: string;
   /** Test seam: filesystem existence probe used during binary resolution. */
   exists?: (path: string) => boolean;
+  /** Test seam: file reader used when inspecting CODEX_HOME/config.toml. */
+  readFile?: (path: string) => string;
+  /** Test seam: realpath resolver used when validating CODEX_HOME/config.toml. */
+  realpath?: (path: string) => string;
 }
 
 /** Where the codex executable came from during resolution. */
-export type CodexBinarySource = 'env-override' | 'managed-bin' | 'path-lookup';
+export type CodexBinarySource =
+  | 'env-override'
+  | 'codex-cli-path-env'
+  | 'codex-home-config'
+  | 'managed-bin'
+  | 'path-lookup';
 
 export interface CodexBinaryResolution {
   /** Executable to spawn: an explicit path for overrides, bare `codex` for PATH lookup. */
@@ -874,7 +883,15 @@ export interface CodexBinaryResolutionOptions {
   homeDir?: string;
   /** Filesystem existence probe. Defaults to fs.existsSync. */
   exists?: (path: string) => boolean;
+  /** File reader for `$CODEX_HOME/config.toml`. Defaults to fs.readFileSync. */
+  readFile?: (path: string) => string;
+  /** Realpath resolver for `$CODEX_HOME/config.toml`. Defaults to fs.realpathSync. */
+  realpath?: (path: string) => string;
+  /** Platform used for path validation. Defaults to process.platform. */
+  platform?: NodeJS.Platform;
 }
+
+export interface CodexCliPathFromConfigOptions extends CodexBinaryResolutionOptions {}
 
 /**
  * Resolve which codex executable AgentForge should spawn. PATH alone is not
@@ -882,8 +899,10 @@ export interface CodexBinaryResolutionOptions {
  * answer), so explicit operator pins win first:
  *
  *   1. `AGENTFORGE_CODEX_BIN` env var (absolute path to the real codex CLI)
- *   2. `~/.agentforge/bin/codex` when it exists (managed install location)
- *   3. bare `codex` PATH lookup (legacy behavior)
+ *   2. `CODEX_CLI_PATH` env var (Codex Desktop/app-managed binary)
+ *   3. `CODEX_HOME/config.toml` `CODEX_CLI_PATH` hint, when present and valid
+ *   4. `~/.agentforge/bin/codex` when it exists (managed install location)
+ *   5. bare `codex` PATH lookup (legacy behavior)
  *
  * Pure given injected `env`/`homeDir`/`exists`; never throws.
  */
@@ -892,21 +911,163 @@ export function resolveCodexBinary(
 ): CodexBinaryResolution {
   const env = options.env ?? process.env;
   const exists = options.exists ?? existsSync;
+  const platform = options.platform ?? process.platform;
+  const pathApi = pathApiForPlatform(platform);
 
   const envOverride = env['AGENTFORGE_CODEX_BIN']?.trim();
   if (envOverride) {
     return { command: envOverride, source: 'env-override' };
   }
 
+  const codexCliPath = env['CODEX_CLI_PATH']?.trim();
+  if (isValidExplicitCodexPath(codexCliPath, { exists, platform })) {
+    return { command: codexCliPath, source: 'codex-cli-path-env' };
+  }
+
+  const configPath = resolveCodexCliPathFromConfig(options);
+  if (configPath) {
+    return { command: configPath, source: 'codex-home-config' };
+  }
+
   const homeDir = options.homeDir ?? safeHomedir();
   if (homeDir) {
-    const managedBin = join(homeDir, '.agentforge', 'bin', 'codex');
+    const managedBin = pathApi.join(homeDir, '.agentforge', 'bin', 'codex');
     if (exists(managedBin)) {
       return { command: managedBin, source: 'managed-bin' };
     }
   }
 
   return { command: CODEX_COMMAND, source: 'path-lookup' };
+}
+
+export function resolveCodexCliConfigPath(
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = safeHomedir(),
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  const codexHome = resolveCodexHome(env, homeDir, platform);
+  if (!codexHome) return undefined;
+  return pathApiForPlatform(platform).join(codexHome, 'config.toml');
+}
+
+export function resolveCodexCliPathFromConfig(
+  options: CodexCliPathFromConfigOptions = {},
+): string | undefined {
+  const env = options.env ?? process.env;
+  const homeDir = options.homeDir ?? safeHomedir();
+  const exists = options.exists ?? existsSync;
+  const readConfig = options.readFile ?? ((path: string) => readFileSync(path, 'utf8'));
+  const realpath = options.realpath ?? realpathSync;
+  const platform = options.platform ?? process.platform;
+  const pathApi = pathApiForPlatform(platform);
+  const codexHome = resolveCodexHome(env, homeDir, platform);
+  if (!codexHome || !isAbsoluteForPlatform(codexHome, platform)) return undefined;
+
+  const configPath = pathApi.join(codexHome, 'config.toml');
+  if (!exists(configPath)) return undefined;
+
+  try {
+    const configRealpath = realpath(configPath);
+    const homeRealpath = realpath(codexHome);
+    if (!isPathInside(homeRealpath, configRealpath, platform)) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  let raw: string;
+  try {
+    raw = readConfig(configPath);
+  } catch {
+    return undefined;
+  }
+
+  const candidate = extractCodexCliPath(raw);
+  if (!isValidExplicitCodexPath(candidate, { exists, platform })) return undefined;
+  return candidate;
+}
+
+function resolveCodexHome(env: NodeJS.ProcessEnv, homeDir: string, platform: NodeJS.Platform): string {
+  const explicit = env['CODEX_HOME']?.trim();
+  if (explicit) return explicit;
+  return homeDir ? pathApiForPlatform(platform).join(homeDir, '.codex') : '';
+}
+
+function extractCodexCliPath(configToml: string): string | undefined {
+  let inMcpEnvTable = false;
+  for (const line of configToml.split(/\r?\n/)) {
+    if (/^\s*\[.*\]\s*(?:#.*)?$/.test(line)) {
+      inMcpEnvTable = /^\s*\[mcp_servers\..+\.env\]\s*(?:#.*)?$/.test(line);
+      continue;
+    }
+    if (!inMcpEnvTable) continue;
+    const match = /^\s*CODEX_CLI_PATH\s*=\s*(["'])(.*?)\1\s*(?:#.*)?$/.exec(line);
+    if (!match) continue;
+    const quote = match[1];
+    const rawValue = match[2] ?? '';
+    const value = quote === '"' ? unescapeTomlBasicString(rawValue) : rawValue;
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  return undefined;
+}
+
+function unescapeTomlBasicString(value: string): string {
+  return value.replace(/\\(["\\btnfr])/g, (_match, char: string) => {
+    switch (char) {
+      case 'b':
+        return '\b';
+      case 't':
+        return '\t';
+      case 'n':
+        return '\n';
+      case 'f':
+        return '\f';
+      case 'r':
+        return '\r';
+      default:
+        return char;
+    }
+  });
+}
+
+function isValidExplicitCodexPath(
+  candidate: string | undefined,
+  options: { exists: (path: string) => boolean; platform: NodeJS.Platform },
+): candidate is string {
+  if (!candidate) return false;
+  const trimmed = candidate.trim();
+  if (!trimmed || /[\u0000\r\n]/.test(trimmed)) return false;
+  if (!isAbsoluteForPlatform(trimmed, options.platform)) return false;
+  if (!isCodexExecutableName(trimmed, options.platform)) return false;
+  return options.exists(trimmed);
+}
+
+function isCodexExecutableName(path: string, platform: NodeJS.Platform): boolean {
+  const name = pathApiForPlatform(platform).basename(path).toLowerCase();
+  return platform === 'win32' ? name === 'codex.exe' : name === 'codex';
+}
+
+function isAbsoluteForPlatform(path: string, platform: NodeJS.Platform): boolean {
+  if (platform === 'win32') {
+    return /^[a-zA-Z]:[\\/]/.test(path);
+  }
+  return posixPath.isAbsolute(path);
+}
+
+function isPathInside(root: string, candidate: string, platform: NodeJS.Platform): boolean {
+  const pathApi = pathApiForPlatform(platform);
+  const from = normalizeCase(pathApi.resolve(root), platform);
+  const to = normalizeCase(pathApi.resolve(candidate), platform);
+  const rel = pathApi.relative(from, to);
+  return rel === '' || (rel !== '..' && !rel.startsWith('../') && !rel.startsWith('..\\') && !pathApi.isAbsolute(rel));
+}
+
+function normalizeCase(path: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' ? path.toLowerCase() : path;
+}
+
+function pathApiForPlatform(platform: NodeJS.Platform): typeof posixPath | typeof win32Path {
+  return platform === 'win32' ? win32Path : posixPath;
 }
 
 function safeHomedir(): string {
@@ -921,10 +1082,14 @@ export function buildCodexSpawnCommand(
   args: string[],
   options: CodexSpawnCommandOptions = {},
 ): CodexSpawnCommand {
+  const env = buildCodexChildEnv(options);
   const resolution = resolveCodexBinary({
-    ...(options.env ? { env: options.env } : {}),
+    env,
     ...(options.homeDir !== undefined ? { homeDir: options.homeDir } : {}),
     ...(options.exists ? { exists: options.exists } : {}),
+    ...(options.readFile ? { readFile: options.readFile } : {}),
+    ...(options.realpath ? { realpath: options.realpath } : {}),
+    ...(options.platform ? { platform: options.platform } : {}),
   });
 
   // Explicit operator pins (env var or managed bin dir) win on every platform
@@ -933,7 +1098,7 @@ export function buildCodexSpawnCommand(
     return {
       command: resolution.command,
       args,
-      ...(options.env ? { env: options.env } : {}),
+      env,
       launchKind: 'path-command',
     };
   }
@@ -943,13 +1108,13 @@ export function buildCodexSpawnCommand(
     return {
       command: CODEX_COMMAND,
       args,
-      ...(options.env ? { env: options.env } : {}),
+      env,
       launchKind: 'path-command',
     };
   }
 
-  const candidates = options.candidates ?? findWindowsCodexCandidates(options.env);
-  const nativeExecutable = findWindowsCodexNativeExecutable(candidates, options);
+  const candidates = options.candidates ?? findWindowsCodexCandidates(env);
+  const nativeExecutable = findWindowsCodexNativeExecutable(candidates, { ...options, env });
   if (nativeExecutable) {
     return {
       command: nativeExecutable.command,
@@ -964,7 +1129,7 @@ export function buildCodexSpawnCommand(
     return {
       command: process.execPath,
       args: [nodeEntrypoint, ...args],
-      ...(options.env ? { env: options.env } : {}),
+      env,
       launchKind: 'windows-node-entrypoint',
     };
   }
@@ -981,6 +1146,15 @@ export function resolveCodexSpawnLaunchKind(
   } catch {
     return undefined;
   }
+}
+
+function buildCodexChildEnv(options: Pick<CodexSpawnCommandOptions, 'env' | 'homeDir' | 'platform'>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...(options.env ?? process.env) };
+  if (!env['CODEX_HOME']?.trim()) {
+    const homeDir = options.homeDir ?? safeHomedir();
+    if (homeDir) env.CODEX_HOME = resolveCodexHome(env, homeDir, options.platform ?? process.platform);
+  }
+  return env;
 }
 
 // ---------------------------------------------------------------------------

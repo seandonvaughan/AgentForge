@@ -8,6 +8,8 @@ import {
   isCodexVersionOutputValid,
   resetCodexBinaryIdentityCache,
   resolveCodexBinary,
+  resolveCodexCliConfigPath,
+  resolveCodexCliPathFromConfig,
   verifyCodexBinaryIdentity,
 } from '../transports/codex-cli-transport.js';
 import { TransportInvalidRequestError } from '../transport-errors.js';
@@ -61,6 +63,10 @@ const GOOD_INVOCATION: MockCodexInvocationResult = {
   durationMs: 12,
 };
 
+function identityRealpath(path: string): string {
+  return path;
+}
+
 describe('resolveCodexBinary', () => {
   it('prefers AGENTFORGE_CODEX_BIN over the managed bin dir and PATH', () => {
     const resolution = resolveCodexBinary({
@@ -70,6 +76,59 @@ describe('resolveCodexBinary', () => {
     });
 
     expect(resolution).toEqual({ command: '/custom/abs/codex-cli', source: 'env-override' });
+  });
+
+  it('uses CODEX_CLI_PATH before managed bins and PATH when the path is valid', () => {
+    const codexCliPath = '/opt/openai/codex/bin/codex';
+    const managedBin = '/fake/home/.agentforge/bin/codex';
+    const resolution = resolveCodexBinary({
+      env: { CODEX_CLI_PATH: codexCliPath },
+      homeDir: '/fake/home',
+      exists: (path) => path === codexCliPath || path === managedBin,
+      platform: 'linux',
+    });
+
+    expect(resolution).toEqual({ command: codexCliPath, source: 'codex-cli-path-env' });
+  });
+
+  it('uses CODEX_HOME config.toml CODEX_CLI_PATH before managed bins', () => {
+    const codexHome = '/fake/home/.codex';
+    const configPath = '/fake/home/.codex/config.toml';
+    const appManagedCodex = '/opt/openai/codex/bin/codex';
+    const managedBin = '/fake/home/.agentforge/bin/codex';
+    const resolution = resolveCodexBinary({
+      env: { CODEX_HOME: codexHome },
+      homeDir: '/fake/home',
+      exists: (path) => [configPath, appManagedCodex, managedBin].includes(path),
+      readFile: () => [
+        '[mcp_servers.node_repl.env]',
+        `CODEX_CLI_PATH = '${appManagedCodex}'`,
+        '',
+      ].join('\n'),
+      realpath: identityRealpath,
+      platform: 'linux',
+    });
+
+    expect(resolution).toEqual({ command: appManagedCodex, source: 'codex-home-config' });
+  });
+
+  it('ignores invalid CODEX_CLI_PATH sources and falls back to the managed bin', () => {
+    const codexHome = '/fake/home/.codex';
+    const configPath = '/fake/home/.codex/config.toml';
+    const managedBin = '/fake/home/.agentforge/bin/codex';
+    const resolution = resolveCodexBinary({
+      env: {
+        CODEX_CLI_PATH: 'relative/codex',
+        CODEX_HOME: codexHome,
+      },
+      homeDir: '/fake/home',
+      exists: (path) => path === configPath || path === managedBin,
+      readFile: () => 'CODEX_CLI_PATH = "relative/from/config/codex"\n',
+      realpath: identityRealpath,
+      platform: 'linux',
+    });
+
+    expect(resolution).toEqual({ command: managedBin, source: 'managed-bin' });
   });
 
   it('falls back to ~/.agentforge/bin/codex when it exists', () => {
@@ -104,6 +163,107 @@ describe('resolveCodexBinary', () => {
   });
 });
 
+describe('resolveCodexCliPathFromConfig', () => {
+  it('builds the config path from CODEX_HOME when present', () => {
+    const codexHome = '/custom/codex-home';
+
+    expect(resolveCodexCliConfigPath({ CODEX_HOME: codexHome }, '/fake/home'))
+      .toBe(join(codexHome, 'config.toml'));
+  });
+
+  it('builds the config path from homeDir when CODEX_HOME is unset', () => {
+    expect(resolveCodexCliConfigPath({}, '/fake/home'))
+      .toBe(join('/fake/home', '.codex', 'config.toml'));
+  });
+
+  it('extracts a single quoted CODEX_CLI_PATH from CODEX_HOME config', () => {
+    const codexHome = '/fake/home/.codex';
+    const configPath = '/fake/home/.codex/config.toml';
+    const codexCliPath = '/opt/openai/codex/bin/codex';
+
+    expect(resolveCodexCliPathFromConfig({
+      env: { CODEX_HOME: codexHome },
+      exists: (path) => path === configPath || path === codexCliPath,
+      readFile: () => [
+        '[mcp_servers.node_repl.env]',
+        `CODEX_CLI_PATH = '${codexCliPath}'`,
+        '',
+      ].join('\n'),
+      realpath: identityRealpath,
+      platform: 'linux',
+    })).toBe(codexCliPath);
+  });
+
+  it('ignores CODEX_CLI_PATH outside an MCP env table', () => {
+    const codexHome = '/fake/home/.codex';
+    const configPath = '/fake/home/.codex/config.toml';
+    const codexCliPath = '/opt/openai/codex/bin/codex';
+
+    expect(resolveCodexCliPathFromConfig({
+      env: { CODEX_HOME: codexHome },
+      exists: (path) => path === configPath || path === codexCliPath,
+      readFile: () => [
+        'CODEX_CLI_PATH = \'/top-level/codex\'',
+        '[profiles.default]',
+        `CODEX_CLI_PATH = '${codexCliPath}'`,
+        '',
+      ].join('\n'),
+      realpath: identityRealpath,
+      platform: 'linux',
+    })).toBeUndefined();
+  });
+
+  it('ignores config.toml when the real path escapes CODEX_HOME', () => {
+    const codexHome = '/fake/home/.codex';
+    const configPath = '/fake/home/.codex/config.toml';
+    const codexCliPath = '/opt/openai/codex/bin/codex';
+
+    expect(resolveCodexCliPathFromConfig({
+      env: { CODEX_HOME: codexHome },
+      exists: (path) => path === configPath || path === codexCliPath,
+      readFile: () => `CODEX_CLI_PATH = '${codexCliPath}'\n`,
+      realpath: (path) => (path === configPath ? '/tmp/escaped/config.toml' : path),
+      platform: 'linux',
+    })).toBeUndefined();
+  });
+
+  it('accepts a local Windows codex.exe path from config', () => {
+    const codexHome = 'C:\\Users\\Agent\\.codex';
+    const configPath = 'C:\\Users\\Agent\\.codex\\config.toml';
+    const codexCliPath = 'C:\\Users\\Agent\\AppData\\Local\\OpenAI\\Codex\\bin\\hash\\codex.exe';
+
+    expect(resolveCodexCliPathFromConfig({
+      env: { CODEX_HOME: codexHome },
+      exists: (path) => path === configPath || path === codexCliPath,
+      readFile: () => [
+        '[mcp_servers.node_repl.env]',
+        `CODEX_CLI_PATH = '${codexCliPath}'`,
+        '',
+      ].join('\n'),
+      realpath: identityRealpath,
+      platform: 'win32',
+    })).toBe(codexCliPath);
+  });
+
+  it('rejects Windows UNC executable targets from config', () => {
+    const codexHome = 'C:\\Users\\Agent\\.codex';
+    const configPath = 'C:\\Users\\Agent\\.codex\\config.toml';
+    const uncCodex = '\\\\server\\share\\codex.exe';
+
+    expect(resolveCodexCliPathFromConfig({
+      env: { CODEX_HOME: codexHome },
+      exists: (path) => path === configPath || path === uncCodex,
+      readFile: () => [
+        '[mcp_servers.node_repl.env]',
+        `CODEX_CLI_PATH = '${uncCodex}'`,
+        '',
+      ].join('\n'),
+      realpath: identityRealpath,
+      platform: 'win32',
+    })).toBeUndefined();
+  });
+});
+
 describe('buildCodexSpawnCommand binary resolution', () => {
   it('spawns the AGENTFORGE_CODEX_BIN override on non-Windows platforms', () => {
     const command = buildCodexSpawnCommand(['exec'], {
@@ -115,6 +275,38 @@ describe('buildCodexSpawnCommand binary resolution', () => {
     expect(command.args).toEqual(['exec']);
     expect(command.launchKind).toBe('path-command');
     expect(command.env).toMatchObject({ AGENTFORGE_CODEX_BIN: '/custom/abs/codex-cli' });
+  });
+
+  it('spawns the CODEX_CLI_PATH executable and injects a default CODEX_HOME', () => {
+    const codexCliPath = '/opt/openai/codex/bin/codex';
+    const command = buildCodexSpawnCommand(['exec'], {
+      platform: 'linux',
+      env: { CODEX_CLI_PATH: codexCliPath, PATH: '/usr/bin' },
+      homeDir: '/fake/home',
+      exists: (path) => path === codexCliPath,
+    });
+
+    expect(command.command).toBe(codexCliPath);
+    expect(command.launchKind).toBe('path-command');
+    expect(command.env).toMatchObject({
+      CODEX_CLI_PATH: codexCliPath,
+      CODEX_HOME: '/fake/home/.codex',
+    });
+  });
+
+  it('preserves an explicit CODEX_HOME in the spawn environment', () => {
+    const codexCliPath = '/opt/openai/codex/bin/codex';
+    const command = buildCodexSpawnCommand(['exec'], {
+      platform: 'linux',
+      env: {
+        CODEX_CLI_PATH: codexCliPath,
+        CODEX_HOME: '/custom/codex-home',
+      },
+      homeDir: '/fake/home',
+      exists: (path) => path === codexCliPath,
+    });
+
+    expect(command.env).toMatchObject({ CODEX_HOME: '/custom/codex-home' });
   });
 
   it('spawns the AGENTFORGE_CODEX_BIN override on Windows without candidate scanning', () => {
@@ -130,7 +322,7 @@ describe('buildCodexSpawnCommand binary resolution', () => {
   });
 
   it('uses the managed ~/.agentforge/bin/codex fallback when present', () => {
-    const managedBin = join('/fake/home', '.agentforge', 'bin', 'codex');
+    const managedBin = '/fake/home/.agentforge/bin/codex';
     const command = buildCodexSpawnCommand(['exec'], {
       platform: 'darwin',
       env: {},
