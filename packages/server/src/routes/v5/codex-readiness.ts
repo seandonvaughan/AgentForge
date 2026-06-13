@@ -2,6 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { resolve } from 'node:path';
 import { buildCodexReadinessReport } from '@agentforge/core';
 
+type CodexReadinessReport = ReturnType<typeof buildCodexReadinessReport>;
+type CodexReadinessReportBuilder = typeof buildCodexReadinessReport;
+
 interface CodexReadinessQuery {
   projectRoot?: string;
   skipLogin?: string | boolean;
@@ -21,7 +24,7 @@ function samePath(left: string, right: string): boolean {
 
 export async function codexReadinessRoutes(
   app: FastifyInstance,
-  opts: { projectRoot?: string } = {},
+  opts: { projectRoot?: string; readinessReportBuilder?: CodexReadinessReportBuilder } = {},
 ): Promise<void> {
   app.get<{ Querystring: CodexReadinessQuery }>('/api/v5/codex/readiness', async (req, reply) => {
     const projectRoot = resolve(opts.projectRoot || process.cwd());
@@ -34,7 +37,8 @@ export async function codexReadinessRoutes(
     }
     const skipLogin = parseBoolean(req.query.skipLogin);
     const includeDoctor = parseBoolean(req.query.includeDoctor);
-    const report = buildCodexReadinessReport({
+    const buildReport = opts.readinessReportBuilder ?? buildCodexReadinessReport;
+    const report = buildReport({
       projectRoot,
       checkLogin: !skipLogin,
       checkDoctor: includeDoctor,
@@ -51,6 +55,12 @@ export async function codexReadinessRoutes(
           agentCount: report.agents.length,
           warningCount: report.warnings.length,
           codexCliAvailable: report.codexCliAvailable,
+          codexExecProbeChecked: report.codexExecProbeChecked,
+          codexExecProbeOk: report.codexExecProbeOk,
+          codexExecProbeStatus: report.codexExecProbeStatus,
+          codexExecProbeLaunchKind: report.codexExecProbeLaunchKind ?? null,
+          codexExecProbeExitCode: report.codexExecProbeExitCode ?? null,
+          codexExecProbeDurationMs: report.codexExecProbeDurationMs ?? null,
           codexDoctorChecked: report.codexDoctorChecked,
           codexDoctorOk: report.codexDoctorOk,
           codexDoctorStatus: report.codexDoctorStatus ?? null,
@@ -63,6 +73,11 @@ export async function codexReadinessRoutes(
           cli: {
             label: 'Codex CLI',
             ok: report.codexCliAvailable,
+          },
+          exec: {
+            label: 'Codex exec preflight',
+            ok: report.codexExecProbeOk,
+            detail: codexExecProbeDetail(report),
           },
           doctor: {
             label: 'Codex doctor',
@@ -89,11 +104,54 @@ export async function codexReadinessRoutes(
           },
         },
         agents: report.agents,
-        warnings: report.warnings,
+        warnings: report.warnings.map((warning) => redactReadinessDetail(warning, report.projectRoot)),
       },
       meta: {
         timestamp: new Date().toISOString(),
       },
     });
   });
+}
+
+function codexExecProbeDetail(report: CodexReadinessReport): string | undefined {
+  const detail = [
+    `status ${report.codexExecProbeStatus}`,
+    report.codexExecProbeLaunchKind ? `launch ${report.codexExecProbeLaunchKind}` : null,
+    report.codexExecProbeExitCode !== undefined ? `exit ${report.codexExecProbeExitCode ?? 'null'}` : null,
+    report.codexExecProbeDurationMs !== undefined ? `${report.codexExecProbeDurationMs}ms` : null,
+    report.codexExecProbeMessage ?? null,
+  ].filter(Boolean).join(', ');
+  return redactReadinessDetail(detail, report.projectRoot);
+}
+
+function redactReadinessDetail(value: string, projectRoot: string): string {
+  let redacted = projectRoot.trim() ? value.split(projectRoot).join('[project-root]') : value;
+  for (const prefix of ['sk-ant-', 'sk-', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_']) {
+    redacted = redactTokenPrefix(redacted, prefix);
+  }
+  return redacted;
+}
+
+function redactTokenPrefix(value: string, prefix: string): string {
+  let redacted = value;
+  let index = redacted.indexOf(prefix);
+  while (index !== -1) {
+    let end = index + prefix.length;
+    while (end < redacted.length && isTokenChar(redacted[end] ?? '')) end += 1;
+    if (end - index >= prefix.length + 12) {
+      redacted = `${redacted.slice(0, index)}[redacted-secret]${redacted.slice(end)}`;
+      index = redacted.indexOf(prefix, index + '[redacted-secret]'.length);
+    } else {
+      index = redacted.indexOf(prefix, end);
+    }
+  }
+  return redacted;
+}
+
+function isTokenChar(char: string): boolean {
+  return (char >= 'a' && char <= 'z')
+    || (char >= 'A' && char <= 'Z')
+    || (char >= '0' && char <= '9')
+    || char === '_'
+    || char === '-';
 }
