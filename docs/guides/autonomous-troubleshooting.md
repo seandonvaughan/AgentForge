@@ -254,6 +254,121 @@ git stash  # Save changes temporarily
 
 ---
 
+### Gatekeeper failure recovery
+
+Gatekeeper failures are raised by the autonomous verifier before a child item is
+accepted. Match the exact error text to the consumer below, then rerun the same
+verifier path after applying the remediation.
+
+**Error: `[verify-gate] uncollected package/dashboard tests detected`**
+
+**Consumer:** `scripts/run-verify-tests.mjs`, consumed by the autonomous
+`RealTestRunner` during VERIFY. The summary is also written to
+`.agentforge/cycles/{cycleId}/verify-gate-summary.json` when
+`AGENTFORGE_VERIFY_SUMMARY_DIR` is set.
+
+**Cause:** Related-test mode selected affected inputs but missed a colocated
+package/dashboard test from the inventory.
+
+**Remediation:**
+```bash
+corepack pnpm exec vitest run <uncollected-test-file>
+AGENTFORGE_CHANGED_FILES="<changed-file>" corepack pnpm exec node scripts/run-verify-tests.mjs
+```
+
+If related mode keeps missing inventory, run the full gate once:
+```bash
+AGENTFORGE_CHANGED_FILES="" corepack pnpm exec node scripts/run-verify-tests.mjs
+```
+
+Expected file patterns:
+```text
+packages/**/__tests__/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}
+packages/**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}
+```
+
+---
+
+**Error: `Dashboard/readiness UI claims require a visible dashboard diff`**
+
+**Consumer:** the execute-phase dashboard/readiness UI claim gate in
+`packages/core/src/autonomous/phase-handlers/execute-phase.ts`, surfaced as a
+Gatekeeper failure before the child item can complete.
+
+**Cause:** The sprint item claimed a dashboard, readiness, UI, page, or
+component change, but the diff only changed non-visible files such as docs,
+tests, server handlers, or helpers.
+
+**Remediation:** include a visible dashboard surface in the declared scope and
+diff, then pair it with verifier-discoverable test evidence.
+```text
+packages/dashboard/src/routes/**/+page.svelte
+packages/dashboard/src/lib/components/**/*.svelte
+packages/dashboard/src/components/**/*.svelte
+packages/dashboard/src/**/*.{css,scss,sass,less}
+packages/dashboard/src/**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}
+```
+
+Run the focused dashboard readiness tests after the visible surface changes:
+```bash
+corepack pnpm exec vitest run packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts
+```
+
+---
+
+**Error: `Vitest JSON report collected zero tests`**
+
+**Consumer:** `packages/core/src/autonomous/exec/real-test-runner.ts`, which
+parses the VERIFY gate's Vitest JSON report for the cycle runner.
+
+**Cause:** the configured test command produced a JSON report, but Vitest found
+no tests. This usually means related mode had no usable changed files, a file
+filter matched no tests, or reporter arguments were not forwarded to Vitest.
+
+**Remediation:**
+```bash
+corepack pnpm exec vitest run <expected-test-file>
+AGENTFORGE_CHANGED_FILES="<changed-source-or-test-file>" corepack pnpm exec node scripts/run-verify-tests.mjs
+```
+
+For a direct sanity check of collection, run the full suite entrypoint:
+```bash
+corepack pnpm exec vitest run
+```
+
+If the cycle uses a wrapper command, confirm it forwards reporter arguments to
+Vitest:
+```bash
+corepack pnpm exec node scripts/run-verify-tests.mjs -- --reporter=json --outputFile .agentforge/tmp/verify-report.json
+```
+
+---
+
+**Error: mocked Codex readiness tests fail or try to launch Codex**
+
+**Consumer:** dashboard readiness verifier tests, especially
+`packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts`,
+with discoverability guarded by `tests/ci/test-discoverability-gate.test.ts`.
+
+**Cause:** readiness UI tests are contract tests over mocked endpoint states.
+They must exercise `/api/v5/codex/readiness` output, visible readiness evidence,
+and redacted readiness-canary/dashboard-readiness diff text without spawning the
+Codex CLI from component tests.
+
+**Remediation:** update the mocked readiness state table and expected visible
+evidence instead of shelling out. Keep coverage in these discoverable files:
+```text
+packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts
+packages/server/src/routes/v5/__tests__/codex-readiness.test.ts
+```
+
+Then run:
+```bash
+corepack pnpm exec vitest run packages/dashboard/src/lib/components/__tests__/CodexReadinessPanel.test.ts packages/server/src/routes/v5/__tests__/codex-readiness.test.ts tests/ci/test-discoverability-gate.test.ts
+```
+
+---
+
 ### Killed at COMMIT Stage: "Branch already exists"
 
 **Cause:** A branch with this version already exists
