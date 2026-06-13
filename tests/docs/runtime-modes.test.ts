@@ -66,4 +66,16 @@ describe("docs/runtime-modes.md", () => {
     expect(docsContent).toMatch(/includeDoctor/);
     expect(docsContent).toMatch(/`codex doctor` remains optional diagnostics/);
   });
+
+  it("places the Codex-mode recovery canary note in the conflict warning section", () => {
+    const conflictWarningSection = docsContent.match(
+      /### Conflict warning([\s\S]*?)---/,
+    );
+    expect(conflictWarningSection).not.toBeNull();
+
+    const section = conflictWarningSection?.[1] ?? "";
+    expect(section).toMatch(/Codex-mode recovery canary/i);
+    expect(section).toMatch(/AGENTFORGE_RUNTIME/i);
+    expect(section).toMatch(/override evidence/i);
+  });
 });

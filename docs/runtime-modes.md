@@ -162,6 +162,10 @@ infrastructure-level decisions cannot be overridden by a checked-in file.
 When the env var and the config file disagree, AgentForge logs a single warning to
 stderr and uses the env var value:
 
+If you are documenting a Codex-mode recovery canary, keep the `AGENTFORGE_RUNTIME`
+override evidence in this section so it stays beside the operator-facing runtime
+override warning.
+
 ```
 [agentforge] AGENTFORGE_RUNTIME="sdk" overrides autonomous.yaml runtime="cli".
 Env var takes precedence (see docs/runtime-modes.md).
