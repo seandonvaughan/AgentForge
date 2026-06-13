@@ -12,6 +12,38 @@ const FIXTURE_PATH = resolve(
   '../../../packages/core/src/autonomous/exec/__fixtures__/vitest-report.json',
 );
 
+function findOutputFileArg(args: string[]): string {
+  const directIdx = args.findIndex((a) => a === '--outputFile');
+  if (directIdx >= 0 && args[directIdx + 1]) return args[directIdx + 1]!;
+
+  const commandLine = args[args.findIndex((a) => a.toLowerCase() === '/c') + 1];
+  const match = commandLine?.match(/(?:^|\s)--outputFile\s+(?:"((?:\\"|[^"])*)"|(\S+))/);
+  const outputFile = match ? (match[1]?.replace(/\\"/g, '"') ?? match[2] ?? null) : null;
+  if (!outputFile) throw new Error('missing --outputFile arg');
+  return outputFile;
+}
+
+function writeZeroTestReport(outputFile: string): void {
+  writeFileSync(outputFile, JSON.stringify({
+    numTotalTests: 0,
+    numPassedTests: 0,
+    numFailedTests: 0,
+    numPendingTests: 0,
+    testResults: [],
+  }));
+}
+
+async function captureRunnerError(run: () => Promise<unknown>): Promise<string> {
+  let thrown: unknown;
+  try {
+    await run();
+  } catch (err) {
+    thrown = err;
+  }
+  expect(thrown).toBeInstanceOf(TestRunnerError);
+  return (thrown as Error).message;
+}
+
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
   const findOutputFile = (args: string[]): string | null => {
@@ -118,11 +150,72 @@ describe('RealTestRunner (unit, mocked execFile)', () => {
     const { execFile } = await import('node:child_process');
     (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
       (_cmd: string, _args: string[], _opts: unknown, cb: (err: unknown, result: { stdout: string; stderr: string }) => void) => {
-        cb(null, { stdout: '', stderr: '' });
+        const err = Object.assign(new Error('vitest exited before writing json'), {
+          code: 1,
+          stdout: '',
+          stderr: 'reporter setup failed',
+        });
+        cb(err, { stdout: '', stderr: 'reporter setup failed' });
       },
     );
     const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
-    await expect(runner.run(cycleId)).rejects.toThrow(TestRunnerError);
+    const expectedSummaryPath = join(tmpDir, '.agentforge/cycles', cycleId, 'test-results.json');
+    const message = await captureRunnerError(() => runner.run(cycleId));
+
+    expect(message).toContain(expectedSummaryPath);
+    expect(message).toContain('exit code 1');
+    expect(message).toContain('Remediation:');
+    expect(message).toContain('reporter setup failed');
+  });
+
+  it('throws actionable TestRunnerError when vitest collects zero tests', async () => {
+    const { execFile } = await import('node:child_process');
+    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      (_cmd: string, args: string[], _opts: unknown, cb: (err: unknown, result: { stdout: string; stderr: string }) => void) => {
+        writeZeroTestReport(findOutputFileArg(args));
+        cb(null, { stdout: 'No test files found', stderr: '' });
+      },
+    );
+
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+    const expectedSummaryPath = join(tmpDir, '.agentforge/cycles', cycleId, 'test-results.json');
+    const message = await captureRunnerError(() => runner.run(cycleId));
+
+    expect(message).toContain('Vitest JSON report collected zero tests');
+    expect(message).toContain(expectedSummaryPath);
+    expect(message).toContain('exit code 0');
+    expect(message).toContain('Remediation:');
+  });
+
+  it('throws verify-gate diagnostics when the gate reports uncollected tests', async () => {
+    const { execFile } = await import('node:child_process');
+    const verifySummary = {
+      mode: 'related',
+      changedFileCount: 1,
+      exitCode: 1,
+      uncollectedTestFiles: ['tests/new-contract.test.ts'],
+    };
+    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      (_cmd: string, args: string[], _opts: unknown, cb: (err: unknown, result: { stdout: string; stderr: string }) => void) => {
+        writeZeroTestReport(findOutputFileArg(args));
+        const err = Object.assign(new Error('verify gate failed'), {
+          code: 1,
+          stdout: '',
+          stderr: `[verify-gate] summary ${JSON.stringify(verifySummary)}`,
+        });
+        cb(err, { stdout: '', stderr: err.stderr });
+      },
+    );
+
+    const runner = new RealTestRunner(tmpDir, DEFAULT_CYCLE_CONFIG.testing, null);
+    const expectedSummaryPath = join(tmpDir, '.agentforge/cycles', cycleId, 'test-results.json');
+    const message = await captureRunnerError(() => runner.run(cycleId));
+
+    expect(message).toContain('Verify-gate reported uncollected tests');
+    expect(message).toContain(expectedSummaryPath);
+    expect(message).toContain('exit code 1');
+    expect(message).toContain('tests/new-contract.test.ts');
+    expect(message).toContain('Remediation:');
   });
 
   it('does not leak unattended cycle control env into the vitest process', async () => {
