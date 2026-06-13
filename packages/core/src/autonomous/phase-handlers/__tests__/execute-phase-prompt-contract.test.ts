@@ -167,4 +167,29 @@ describe('execute-phase agent prompt contract', () => {
       }
     }
   });
+
+  it('tells dashboard/readiness UI claim agents which visible surface must exercise the claim', async () => {
+    const surface = join(
+      tmpRoot,
+      'packages',
+      'dashboard',
+      'src',
+      'routes',
+      'cycles',
+      '+page.svelte',
+    );
+    mkdirSync(join(tmpRoot, 'packages', 'dashboard', 'src', 'routes', 'cycles'), { recursive: true });
+    writeFileSync(surface, '<script lang="ts"></script>\n');
+
+    const prompt = await capturePrompt({
+      title: 'Gate dashboard readiness UI claims',
+      description: 'Make the dashboard cycle page show readiness status.',
+      tags: ['dashboard', 'ui'],
+      files: ['packages/dashboard/src/routes/cycles/+page.svelte'],
+    });
+
+    expect(prompt).toContain('Dashboard/readiness UI claim gate');
+    expect(prompt).toContain('Visible dashboard surface to exercise: packages/dashboard/src/routes/cycles/+page.svelte');
+    expect(prompt).toContain('verifier-discoverable `*.test.*` or `*.spec.*`');
+  });
 });
