@@ -22,6 +22,32 @@ const AGENTFORGE_CYCLE_CONTROL_ENV_KEYS = [
   'AGENTFORGE_MAX_FAILED_CYCLES',
 ] as const;
 
+const DIAGNOSTIC_TAIL_LIMIT = 500;
+
+interface VitestJsonReport {
+  numTotalTests?: number;
+  numPassedTests?: number;
+  numFailedTests?: number;
+  numPendingTests?: number;
+  testResults?: Array<{
+    name: string;
+    assertionResults?: Array<{
+      title: string;
+      status: string;
+      ancestorTitles?: string[];
+      failureMessages?: string[];
+    }>;
+  }>;
+}
+
+interface TestRunnerDiagnosticContext {
+  outputFile: string;
+  rawLogPath: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 function buildTestSubprocessEnv(): NodeJS.ProcessEnv {
   const env = buildVerificationSubprocessEnv();
 
@@ -62,6 +88,56 @@ export class TestRunTimeoutError extends TestRunnerError {
     super(`Test run timed out after ${timeoutMs}ms`);
     this.name = 'TestRunTimeoutError';
   }
+}
+
+function compactDiagnosticText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, DIAGNOSTIC_TAIL_LIMIT);
+}
+
+function parseVerifyGateSummary(output: string): Record<string, unknown> | null {
+  const match = output.match(/\[verify-gate\]\s+summary\s+({[^\r\n]+})/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]!);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasUncollectedVerifyGateTests(summary: Record<string, unknown>): boolean {
+  for (const [key, value] of Object.entries(summary)) {
+    if (!key.toLowerCase().includes('uncollected')) continue;
+    if (typeof value === 'number' && value > 0) return true;
+    if (Array.isArray(value) && value.length > 0) return true;
+    if (typeof value === 'string' && value.trim().length > 0) return true;
+  }
+  return false;
+}
+
+function buildTestRunnerDiagnostic(
+  reason: string,
+  remediation: string,
+  ctx: TestRunnerDiagnosticContext,
+): string {
+  const combinedOutput = [ctx.stderr, ctx.stdout].filter(Boolean).join('\n');
+  const verifyGateSummary = parseVerifyGateSummary(combinedOutput);
+  const lines = [
+    `${reason} (exit code ${ctx.exitCode}).`,
+    `Vitest JSON summary path: ${ctx.outputFile}.`,
+    `Raw log path: ${ctx.rawLogPath}.`,
+  ];
+  if (verifyGateSummary) {
+    lines.push(`Verify-gate summary: ${JSON.stringify(verifyGateSummary)}.`);
+  }
+  lines.push(`Remediation: ${remediation}`);
+  const tail = compactDiagnosticText(combinedOutput);
+  if (tail) {
+    lines.push(`Captured output: ${tail}`);
+  }
+  return lines.join(' ');
 }
 
 /**
@@ -158,12 +234,22 @@ export class RealTestRunner {
 
     if (!existsSync(outputFile)) {
       throw new TestRunnerError(
-        `vitest did not produce output file (exit ${exitCode}): ${stderr.slice(0, 500)}`,
+        buildTestRunnerDiagnostic(
+          'Vitest did not produce a JSON report',
+          'ensure the configured testing.command invokes vitest and forwards --reporter=json --outputFile; if using verify-gate, confirm passthrough reporter arguments reach vitest',
+          { outputFile, rawLogPath, exitCode, stdout, stderr },
+        ),
       );
     }
 
-    const raw = JSON.parse(readFileSync(outputFile, 'utf8'));
-    return this.parseVitestJson(raw, rawLogPath, startedAt, exitCode);
+    const raw = JSON.parse(readFileSync(outputFile, 'utf8')) as VitestJsonReport;
+    return this.parseVitestJson(
+      raw,
+      rawLogPath,
+      startedAt,
+      exitCode,
+      { outputFile, rawLogPath, exitCode, stdout, stderr },
+    );
   }
 
   /**
@@ -250,28 +336,39 @@ export class RealTestRunner {
    * against the priorSnapshot.
    */
   private parseVitestJson(
-    raw: {
-      numPassedTests?: number;
-      numFailedTests?: number;
-      numPendingTests?: number;
-      testResults?: Array<{
-        name: string;
-        assertionResults?: Array<{
-          title: string;
-          status: string;
-          ancestorTitles?: string[];
-          failureMessages?: string[];
-        }>;
-      }>;
-    },
+    raw: VitestJsonReport,
     rawLogPath: string,
     startedAt: number,
     exitCode: number,
+    diagnosticContext: TestRunnerDiagnosticContext,
   ): TestResult {
     const passed = raw.numPassedTests ?? 0;
     const failed = raw.numFailedTests ?? 0;
     const skipped = raw.numPendingTests ?? 0;
-    const total = passed + failed + skipped;
+    const total = raw.numTotalTests ?? passed + failed + skipped;
+
+    if (total === 0) {
+      const verifyGateSummary = parseVerifyGateSummary(
+        [diagnosticContext.stderr, diagnosticContext.stdout].filter(Boolean).join('\n'),
+      );
+      if (verifyGateSummary && hasUncollectedVerifyGateTests(verifyGateSummary)) {
+        throw new TestRunnerError(
+          buildTestRunnerDiagnostic(
+            'Verify-gate reported uncollected tests and vitest collected zero tests',
+            'run the verify gate in full mode or update the changed-file/test-file selection so the uncollected tests are included in the vitest invocation',
+            diagnosticContext,
+          ),
+        );
+      }
+
+      throw new TestRunnerError(
+        buildTestRunnerDiagnostic(
+          'Vitest JSON report collected zero tests',
+          'ensure test include globs and affected-test selection match at least one test; for verify-gate related mode, provide changed files or run the full gate',
+          diagnosticContext,
+        ),
+      );
+    }
 
     const failedTests: FailedTest[] = [];
     for (const file of raw.testResults ?? []) {
