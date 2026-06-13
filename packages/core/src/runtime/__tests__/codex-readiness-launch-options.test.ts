@@ -84,6 +84,9 @@ describe('buildCodexReadinessReport launch options', () => {
       if (command === codexPackage?.nativeExe && args[0] === '--version') {
         return { status: 0, stdout: 'codex 0.131.0\n', stderr: '' };
       }
+      if (command === codexPackage?.nativeExe && args.includes('exec')) {
+        return { status: 0, stdout: '{"type":"message"}\n', stderr: '' };
+      }
       return { status: 1, stdout: '', stderr: `unexpected command: ${command} ${args.join(' ')}` };
     });
 
@@ -103,6 +106,9 @@ describe('buildCodexReadinessReport launch options', () => {
 
     expect(report.codexCliAvailable).toBe(true);
     expect(report.codexCliLaunchKind).toBe('windows-native-package');
+    expect(report.codexExecProbeChecked).toBe(true);
+    expect(report.codexExecProbeOk).toBe(true);
+    expect(report.codexExecProbeLaunchKind).toBe('windows-native-package');
     expect(spawnSyncMock).toHaveBeenCalledWith(
       codexPackage.nativeExe,
       ['--version'],
@@ -112,6 +118,18 @@ describe('buildCodexReadinessReport launch options', () => {
         env: expect.objectContaining({
           CODEX_MANAGED_BY_NPM: '1',
           // realpathSync: macOS tmpdir() lives under the /var -> /private/var symlink.
+          CODEX_MANAGED_PACKAGE_ROOT: realpathSync(codexPackage.packageRoot),
+        }),
+      }),
+    );
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      codexPackage.nativeExe,
+      expect.arrayContaining(['exec', '--sandbox', 'read-only']),
+      expect.objectContaining({
+        input: 'Reply with exactly: agentforge-codex-readiness-ok',
+        windowsHide: true,
+        env: expect.objectContaining({
+          CODEX_MANAGED_BY_NPM: '1',
           CODEX_MANAGED_PACKAGE_ROOT: realpathSync(codexPackage.packageRoot),
         }),
       }),
@@ -132,6 +150,9 @@ describe('buildCodexReadinessReport launch options', () => {
     spawnSyncMock.mockImplementation((_command: string, args: string[]) => {
       if (args[0] === '--version') {
         return { status: 0, stdout: 'codex-cli 0.140.0\n', stderr: '' };
+      }
+      if (args.includes('exec')) {
+        return { status: 0, stdout: '{"type":"message"}\n', stderr: '' };
       }
       if (args[0] === 'doctor') {
         return {
