@@ -66,7 +66,15 @@ async function initGitRepo(dir: string): Promise<void> {
 const EPIC_ID = 'epic-child-verify';
 
 function writeEpicPlan(
-  items: Array<{ id: string; assignee: string; wave: number; files?: string[] }>,
+  items: Array<{
+    id: string;
+    assignee: string;
+    wave: number;
+    files?: string[];
+    title?: string;
+    description?: string;
+    tags?: string[];
+  }>,
   cycleId: string,
 ): void {
   const data = {
@@ -74,11 +82,11 @@ function writeEpicPlan(
     sprintId: 'sprint-cv-1',
     items: items.map((i) => ({
       id: i.id,
-      title: `Item ${i.id}`,
+      title: i.title ?? `Item ${i.id}`,
       assignee: i.assignee,
       status: 'planned',
-      tags: ['coder'],
-      description: `Description for ${i.id}`,
+      tags: i.tags ?? ['coder'],
+      description: i.description ?? `Description for ${i.id}`,
       wave: i.wave,
       parentEpicId: EPIC_ID,
       ...(i.files ? { files: i.files } : {}),
@@ -249,5 +257,149 @@ describe('execute phase — per-child verify wiring (P0.5)', () => {
     expect(verifyEvents.length).toBe(0);
     expect(result.status).toBe('completed');
     expect((result as any).epicIntegration).toBeUndefined();
+  });
+
+  it('fails a dashboard/readiness UI claim with no visible dashboard diff', async () => {
+    const cycleId = 'cycle-cv-ui-missing-surface';
+    await initGitRepo(tmpRoot);
+    mkdirSync(join(tmpRoot, 'packages', 'core', 'src'), { recursive: true });
+    writeEpicPlan(
+      [{
+        id: 'ui1',
+        assignee: 'coder',
+        wave: 0,
+        title: 'Gate dashboard readiness UI claims',
+        description: 'Make the dashboard cycle page show readiness status.',
+        tags: ['coder', 'dashboard', 'ui'],
+        files: ['packages/core/src/status.ts', 'packages/core/src/status.test.ts'],
+      }],
+      cycleId,
+    );
+
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, opts: { cwd?: string }) => {
+        if (!opts.cwd) throw new Error('missing worktree cwd');
+        mkdirSync(join(opts.cwd, 'packages', 'core', 'src'), { recursive: true });
+        writeFileSync(join(opts.cwd, 'packages', 'core', 'src', 'status.ts'), 'export const ready = true;\n');
+        writeFileSync(join(opts.cwd, 'packages', 'core', 'src', 'status.test.ts'), 'export const covered = true;\n');
+        return { output: 'done', costUsd: 0.01 };
+      }),
+    };
+    const childVerifyRunner = vi.fn<ChildVerifyCommandRunner>(async () => ({ ok: true, code: 0, output: '' }));
+    const ctx = makeCtx(bus, cycleId, runtime);
+
+    const result = await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+      childVerifyRunner,
+    });
+
+    expect(childVerifyRunner).toHaveBeenCalled();
+    const [item] = (result.itemResults ?? []) as Array<{
+      status: string;
+      failureClass?: string;
+      error?: string;
+    }>;
+    expect(item?.status).toBe('failed');
+    expect(item?.failureClass).toBe('scope');
+    expect(item?.error).toContain('Dashboard/readiness UI claims require a visible dashboard diff');
+    expect(item?.error).toContain('packages/dashboard/src/routes/**/+page.svelte');
+  });
+
+  it('fails a dashboard/readiness UI claim with no discoverable test evidence', async () => {
+    const cycleId = 'cycle-cv-ui-missing-test';
+    await initGitRepo(tmpRoot);
+    mkdirSync(join(tmpRoot, 'packages', 'dashboard', 'src', 'routes', 'cycles'), { recursive: true });
+    writeEpicPlan(
+      [{
+        id: 'ui1',
+        assignee: 'coder',
+        wave: 0,
+        title: 'Gate dashboard readiness UI claims',
+        description: 'Make the dashboard cycle page show readiness status.',
+        tags: ['coder', 'dashboard', 'ui'],
+        files: ['packages/dashboard/src/routes/cycles/+page.svelte'],
+      }],
+      cycleId,
+    );
+
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, opts: { cwd?: string }) => {
+        if (!opts.cwd) throw new Error('missing worktree cwd');
+        mkdirSync(join(opts.cwd, 'packages', 'dashboard', 'src', 'routes', 'cycles'), { recursive: true });
+        writeFileSync(join(opts.cwd, 'packages', 'dashboard', 'src', 'routes', 'cycles', '+page.svelte'), '<h1>Ready</h1>\n');
+        return { output: 'done', costUsd: 0.01 };
+      }),
+    };
+    const childVerifyRunner = vi.fn<ChildVerifyCommandRunner>(async () => ({ ok: true, code: 0, output: '' }));
+    const ctx = makeCtx(bus, cycleId, runtime);
+
+    const result = await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+      childVerifyRunner,
+    });
+
+    expect(childVerifyRunner).toHaveBeenCalled();
+    const [item] = (result.itemResults ?? []) as Array<{
+      status: string;
+      failureClass?: string;
+      error?: string;
+    }>;
+    expect(item?.status).toBe('failed');
+    expect(item?.failureClass).toBe('tests');
+    expect(item?.error).toContain('Dashboard/readiness UI claims require discoverable test evidence');
+    expect(item?.error).toContain('*.test.*');
+  });
+
+  it('completes a dashboard/readiness UI claim with a visible dashboard diff and discoverable test', async () => {
+    const cycleId = 'cycle-cv-ui-claim-pass';
+    await initGitRepo(tmpRoot);
+    mkdirSync(join(tmpRoot, 'packages', 'dashboard', 'src', 'routes', 'cycles'), { recursive: true });
+    writeEpicPlan(
+      [{
+        id: 'ui1',
+        assignee: 'coder',
+        wave: 0,
+        title: 'Gate dashboard readiness UI claims',
+        description: 'Make the dashboard cycle page show readiness status.',
+        tags: ['coder', 'dashboard', 'ui'],
+        files: [
+          'packages/dashboard/src/routes/cycles/+page.svelte',
+          'packages/dashboard/src/routes/cycles/+page.test.ts',
+        ],
+      }],
+      cycleId,
+    );
+
+    const bus = makeBus();
+    const runtime = {
+      run: vi.fn().mockImplementation(async (_agentId: string, _task: string, opts: { cwd?: string }) => {
+        if (!opts.cwd) throw new Error('missing worktree cwd');
+        mkdirSync(join(opts.cwd, 'packages', 'dashboard', 'src', 'routes', 'cycles'), { recursive: true });
+        writeFileSync(join(opts.cwd, 'packages', 'dashboard', 'src', 'routes', 'cycles', '+page.svelte'), '<h1>Ready</h1>\n');
+        writeFileSync(join(opts.cwd, 'packages', 'dashboard', 'src', 'routes', 'cycles', '+page.test.ts'), 'export const covered = true;\n');
+        return { output: 'done', costUsd: 0.01 };
+      }),
+    };
+    const childVerifyRunner = vi.fn<ChildVerifyCommandRunner>(async () => ({ ok: true, code: 0, output: '' }));
+    const ctx = makeCtx(bus, cycleId, runtime);
+
+    const result = await runExecutePhase(ctx, {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      requireWorktrees: true,
+      childVerifyRunner,
+    });
+
+    expect(childVerifyRunner).toHaveBeenCalled();
+    const [item] = (result.itemResults ?? []) as Array<{ status: string; error?: string }>;
+    expect(item?.status).toBe('completed');
+    expect(item?.error).toBeUndefined();
+    expect(result.status).toBe('completed');
   });
 });
