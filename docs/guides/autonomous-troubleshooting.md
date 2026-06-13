@@ -52,6 +52,53 @@ See **[API Reference § 1 — Authentication](../api-reference.md#-1--authentica
 
 ---
 
+### Error: "Codex readiness degraded" or Codex dispatch falls back
+
+**Cause:** The Codex readiness gate could not prove a real noninteractive
+`codex exec` run. Readiness checks the generated agent model profiles, Codex
+CLI availability, AgentForge MCP server build output, and a tiny exec preflight
+using read-only sandboxing. `codex doctor` is useful extra diagnostics, but it
+is not the primary readiness gate.
+
+**Solution:**
+
+Run the same readiness command the API and MCP tool use:
+```bash
+corepack pnpm exec agentforge codex readiness --json --skip-login --skip-doctor
+```
+
+If login state matters for your environment, omit `--skip-login`. If you need
+doctor details, add `--doctor`; otherwise keep `--skip-doctor` for the normal
+gate.
+
+For dashboard/API checks:
+```bash
+curl "http://localhost:4751/api/v5/codex/readiness?skipLogin=true"
+curl "http://localhost:4751/api/v5/codex/readiness?skipLogin=true&includeDoctor=true"
+```
+
+For MCP clients, call `af_codex_readiness` with:
+```json
+{
+  "skipLogin": true,
+  "includeDoctor": false
+}
+```
+
+Interpret the report:
+- `codexExecProbeChecked`, `codexExecProbeOk`, and
+  `codexExecProbeStatus` show whether the exec preflight actually ran.
+- `codexExecProbeLaunchKind`, `codexExecProbeExitCode`,
+  `codexExecProbeDurationMs`, and `codexExecProbeMessage` explain the launch
+  path and failure.
+- `mcpServerAvailable: false` means `packages/mcp-server/dist/index.js` is
+  missing; run `corepack pnpm build`.
+- `warnings[]` contains remediation hints. Placeholders such as
+  `[project-root]`, `[codex-home]`, `[codex-bin]`, and `[redacted-secret]`
+  mean the CLI/API/MCP response redacted local paths or secrets.
+
+---
+
 ### Error: "gh: not found" or "gh: not authenticated"
 
 **Cause:** GitHub CLI is not installed or not authenticated

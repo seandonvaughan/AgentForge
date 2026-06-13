@@ -36,6 +36,45 @@ Claude instead (`packages/core/src/runtime/provider-availability.ts`).
 
 ---
 
+## Codex exec readiness
+
+When operators need to prove the Codex path before a cycle, use the readiness
+gate instead of `codex doctor` alone:
+
+```sh
+corepack pnpm exec agentforge codex readiness --json --skip-login --skip-doctor
+```
+
+`agentforge codex readiness` verifies generated agent profiles, the Codex CLI,
+the built AgentForge MCP server, and a tiny noninteractive `codex exec`
+preflight. The exec preflight asks Codex to print a fixed string with
+`--ask-for-approval never`, `--sandbox read-only`, `--json`, `--cd
+<project-root>`, `--skip-git-repo-check`, `--ignore-user-config`, and
+`--ignore-rules`; readiness is not just a PATH or version check.
+
+Important fields in `--json` output:
+
+- `codexExecProbeChecked`, `codexExecProbeOk`, and
+  `codexExecProbeStatus` are the primary Codex execution gate.
+- `codexExecProbeLaunchKind`, `codexExecProbeExitCode`,
+  `codexExecProbeDurationMs`, and `codexExecProbeMessage` explain how the
+  preflight launched and why it degraded.
+- `mcpServerAvailable` proves `packages/mcp-server/dist/index.js` exists for
+  tools that depend on the local MCP server build.
+- `warnings[]` is operator-facing remediation context. Values such as
+  `[project-root]`, `[codex-home]`, `[codex-bin]`, and `[redacted-secret]`
+  mean the report intentionally removed local paths or secrets before
+  returning CLI, API, or MCP diagnostics.
+
+`codex doctor` remains optional diagnostics, not the primary readiness gate.
+Add `--doctor` when you need its slower environment checks; keep
+`--skip-doctor` for the normal readiness gate. The dashboard API exposes the
+same contract at `/api/v5/codex/readiness?skipLogin=true&includeDoctor=true`,
+and MCP clients can call `af_codex_readiness` with `skipLogin` and
+`includeDoctor`.
+
+---
+
 ## The escape hatch: `AGENTFORGE_RUNTIME`
 
 Setting `AGENTFORGE_RUNTIME` (or `runtime:` in `.agentforge/autonomous.yaml`)
