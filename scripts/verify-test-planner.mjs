@@ -41,9 +41,93 @@ export function matchesCoreGlobs(file, globs) {
  * String-only matching (no regex over user-controlled paths) per repo convention.
  */
 export function isTestFile(file) {
-  const norm = String(file).split('\\').join('/');
+  const norm = normalizeRepoPath(file);
   const exts = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
   return exts.some((ext) => norm.endsWith('.test' + ext) || norm.endsWith('.spec' + ext));
+}
+
+/** Normalize a path to the repo-relative, forward-slash form vitest args use. */
+export function normalizeRepoPath(file) {
+  let norm = String(file).split('\\').join('/').trim();
+  while (norm.startsWith('./')) norm = norm.slice(2);
+
+  const repoMarkers = ['packages/', 'tests/', 'scripts/'];
+  for (const marker of repoMarkers) {
+    const idx = norm.indexOf(marker);
+    if (idx > 0) return norm.slice(idx);
+  }
+
+  return norm;
+}
+
+function dirname(file) {
+  const idx = file.lastIndexOf('/');
+  return idx === -1 ? '' : file.slice(0, idx);
+}
+
+function isInventorySourceFile(file) {
+  if (isTestFile(file)) return false;
+  const exts = ['.svelte', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+  return exts.some((ext) => file.endsWith(ext));
+}
+
+function isPackageOrDashboardInventoryPath(file) {
+  return file.startsWith('packages/');
+}
+
+function adjacentTestDirFor(file) {
+  const dir = dirname(file);
+  return dir.length === 0 ? '__tests__/' : `${dir}/__tests__/`;
+}
+
+function isCandidateTestForChangedFile(testFile, changedFile) {
+  if (testFile === changedFile && isTestFile(changedFile)) return true;
+  if (!isInventorySourceFile(changedFile)) return false;
+  if (!isPackageOrDashboardInventoryPath(changedFile)) return false;
+
+  const adjacentTestDir = adjacentTestDirFor(changedFile);
+  if (testFile.startsWith(adjacentTestDir)) return true;
+
+  const sourceDir = dirname(changedFile);
+  return sourceDir.length > 0 && testFile.startsWith(`${sourceDir}/`) && isTestFile(testFile);
+}
+
+/**
+ * Compare changed package/dashboard files with known tests and selected vitest
+ * inputs. Returns repo-relative test paths that inventory says should be run
+ * but that are absent from the selected input list.
+ *
+ * @param {{ changedFiles?: string[], selectedFiles?: string[], testFiles?: string[] }} opts
+ * @returns {string[]}
+ */
+export function findUncollectedTests({ changedFiles = [], selectedFiles = [], testFiles = [] }) {
+  const selected = new Set(selectedFiles.map(normalizeRepoPath).filter(Boolean));
+  const normalizedChanged = changedFiles.map(normalizeRepoPath).filter(Boolean);
+  const normalizedTests = testFiles.map(normalizeRepoPath).filter(isTestFile);
+  const uncollected = [];
+  const seen = new Set();
+
+  for (const changed of normalizedChanged) {
+    for (const testFile of normalizedTests) {
+      if (!isCandidateTestForChangedFile(testFile, changed)) continue;
+      if (selected.has(testFile) || seen.has(testFile)) continue;
+      seen.add(testFile);
+      uncollected.push(testFile);
+    }
+  }
+
+  return uncollected;
+}
+
+/** Build actionable VERIFY-gate text for missed test inventory entries. */
+export function formatUncollectedTestsError(uncollectedTests) {
+  const tests = Array.from(new Set(uncollectedTests.map(normalizeRepoPath).filter(Boolean)));
+  if (tests.length === 0) return '';
+  return [
+    'VERIFY planner selected affected vitest inputs but missed test files from the package/dashboard inventory.',
+    'Add these repo-relative paths to the selected vitest inputs or run the full test gate:',
+    ...tests.map((testFile) => `- ${testFile}`),
+  ].join('\n');
 }
 
 /**
@@ -65,7 +149,7 @@ export function selectAffectedFiles({ changedFiles = [], relatedFiles = [] }) {
   const out = [];
   const seen = new Set();
   const push = (file) => {
-    const norm = String(file).split('\\').join('/').trim();
+    const norm = normalizeRepoPath(file);
     if (norm.length === 0 || seen.has(norm)) return;
     seen.add(norm);
     out.push(norm);
