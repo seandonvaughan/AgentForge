@@ -105,4 +105,74 @@ describe('run-verify-tests.mjs (subprocess)', () => {
     expect(summary.availableMemoryGb).toBe(0.1);
     expect(summary.availableMemorySource).toBe('env:AGENTFORGE_VERIFY_AVAILABLE_GB');
   });
+
+  it('fails related mode with summary findings when package and dashboard tests are not selected', () => {
+    mkdirSync(join(fixture, 'packages/core/src/__tests__'), { recursive: true });
+    mkdirSync(join(fixture, 'packages/dashboard/src/lib/__tests__'), { recursive: true });
+    writeFileSync(join(fixture, 'packages/core/src/feature.ts'), 'export const feature = 1;\n', 'utf8');
+    writeFileSync(join(fixture, 'packages/dashboard/src/lib/widget.ts'), 'export const widget = 1;\n', 'utf8');
+    writeFileSync(
+      join(fixture, 'packages/core/src/__tests__/feature.test.ts'),
+      "import { expect, it } from 'vitest';\nimport { feature } from '../feature';\nit('feature', () => expect(feature).toBe(1));\n",
+      'utf8',
+    );
+    writeFileSync(
+      join(fixture, 'packages/dashboard/src/lib/__tests__/widget.test.ts'),
+      "import { expect, it } from 'vitest';\nimport { widget } from '../widget';\nit('widget', () => expect(widget).toBe(1));\n",
+      'utf8',
+    );
+    writeFileSync(
+      join(fixture, 'vitest.config.ts'),
+      "import { defineConfig } from 'vitest/config';\nexport default defineConfig({ test: { include: ['example.test.ts', 'packages/**/*.test.ts'] } });\n",
+      'utf8',
+    );
+    writeFileSync(
+      join(fixture, '.agentforge', 'autonomous.yaml'),
+      'testing:\n  affectedMode: related\n  memory:\n    reserveGb: 1\n    perWorkerGb: 1\n    heapCapMb: 1024\n',
+      'utf8',
+    );
+
+    const changedFiles = [
+      'packages/core/src/feature.ts',
+      'packages/dashboard/src/lib/widget.ts',
+    ].join('\n');
+    const res = spawnSync(process.execPath, [RUNNER], {
+      cwd: fixture,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        AGENTFORGE_CHANGED_FILES: changedFiles,
+        AGENTFORGE_VERIFY_SUMMARY_DIR: fixture,
+        AGENTFORGE_VERIFY_AVAILABLE_GB: '2',
+        AGENTFORGE_VERIFY_MIN_WORKERS: '1',
+      },
+    });
+
+    expect(res.status, res.stderr).toBe(1);
+    expect(res.stderr).toContain('changed file: packages/core/src/feature.ts');
+    expect(res.stderr).toContain('expected test pattern: packages/core/src/__tests__/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}');
+    expect(res.stderr).toContain('selected args:');
+    expect(res.stderr).toContain('remediation: Add packages/core/src/__tests__/feature.test.ts');
+
+    const summary = JSON.parse(readFileSync(join(fixture, 'verify-gate-summary.json'), 'utf8'));
+    expect(summary.exitCode).toBe(1);
+    expect(summary.uncollectedTestCount).toBe(2);
+    expect(summary.uncollectedTestFiles).toEqual([
+      'packages/core/src/__tests__/feature.test.ts',
+      'packages/dashboard/src/lib/__tests__/widget.test.ts',
+    ]);
+    expect(summary.uncollectedTestFindings[0]).toMatchObject({
+      changedFile: 'packages/core/src/feature.ts',
+      uncollectedTestFile: 'packages/core/src/__tests__/feature.test.ts',
+      expectedTestPattern: 'packages/core/src/__tests__/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs} or packages/core/src/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}',
+      remediation: 'Add packages/core/src/__tests__/feature.test.ts to the selected vitest inputs or run the verify gate in full mode.',
+    });
+    expect(summary.uncollectedTestFindings[0].selectedArgs).toEqual(expect.arrayContaining([
+      'related',
+      '--run',
+      'packages/core/src/feature.ts',
+      'packages/dashboard/src/lib/widget.ts',
+      '--maxWorkers=1',
+    ]));
+  });
 });
