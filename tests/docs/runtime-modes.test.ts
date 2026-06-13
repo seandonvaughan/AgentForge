@@ -52,4 +52,18 @@ describe("docs/runtime-modes.md", () => {
     expect(autoSection).toMatch(/historical Claude-first preference/i);
     expect(autoSection).not.toMatch(/Both transports are registered/i);
   });
+
+  it("documents the Codex exec readiness operator contract", () => {
+    expect(docsContent).toMatch(/pnpm exec agentforge codex readiness --json --skip-login --skip-doctor/);
+    expect(docsContent).toMatch(/tiny noninteractive `codex exec`\s+preflight/i);
+    expect(docsContent).toMatch(/--ask-for-approval never/);
+    expect(docsContent).toMatch(/--sandbox read-only/);
+    expect(docsContent).toMatch(/codexExecProbeChecked/);
+    expect(docsContent).toMatch(/mcpServerAvailable/);
+    expect(docsContent).toMatch(/\[redacted-secret\]/);
+    expect(docsContent).toMatch(/\/api\/v5\/codex\/readiness\?skipLogin=true&includeDoctor=true/);
+    expect(docsContent).toMatch(/af_codex_readiness/);
+    expect(docsContent).toMatch(/includeDoctor/);
+    expect(docsContent).toMatch(/`codex doctor` remains optional diagnostics/);
+  });
 });

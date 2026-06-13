@@ -1,6 +1,6 @@
 # AgentForge MCP Server
 
-The `@agentforge/mcp-server` package exposes three AgentForge tools as an MCP server, making them available to Claude Code, Claude Desktop, and any other MCP-compatible client.
+The `@agentforge/mcp-server` package exposes AgentForge tools as an MCP server, making them available to Claude Code, Claude Desktop, and any other MCP-compatible client.
 
 ## Tools
 
@@ -30,6 +30,50 @@ Look up the best AgentForge agent for a set of capability tags. Returns a dispat
 ```
 
 Requires `.agentforge/routing-index.json` — run `agentforge team forge` first.
+
+---
+
+### `af_codex_readiness`
+
+Return the same readiness report as `agentforge codex readiness --json`.
+Operators use this before autonomous cycles to prove the Codex path can run a
+tiny noninteractive `codex exec` preflight, not merely that the binary exists.
+
+**Input:**
+```json
+{
+  "projectRoot": "/path/to/project",
+  "skipLogin": true,
+  "includeDoctor": false
+}
+```
+
+`projectRoot` defaults to `AGENTFORGE_PROJECT_ROOT` or the MCP server working
+directory. `skipLogin` maps to the CLI `--skip-login` flag. `includeDoctor`
+maps to `--doctor`; when omitted or `false`, the MCP tool passes
+`--skip-doctor` because `codex doctor --json` is optional diagnostics rather
+than the primary readiness gate.
+
+**Output:**
+```json
+{
+  "ok": true,
+  "data": {
+    "codexExecProbeChecked": true,
+    "codexExecProbeOk": true,
+    "codexExecProbeStatus": "passed",
+    "mcpServerAvailable": true,
+    "warnings": [],
+    "ready": true
+  },
+  "error": null
+}
+```
+
+When `ok` is `true` but `ready` is `false`, inspect `warnings` and the
+`codexExecProbe*` fields. Placeholders such as `[project-root]`,
+`[codex-home]`, `[codex-bin]`, and `[redacted-secret]` are intentional
+redactions of local paths or credentials in CLI/API/MCP diagnostics.
 
 ---
 

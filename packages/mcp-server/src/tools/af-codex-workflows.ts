@@ -13,6 +13,7 @@ export const ProjectRootInput = z.object({
 
 export const AfCodexReadinessInput = ProjectRootInput.extend({
   skipLogin: z.boolean().optional().default(false),
+  includeDoctor: z.boolean().optional().default(false),
 });
 
 export const AfCyclePreviewInput = ProjectRootInput.extend({
@@ -31,7 +32,7 @@ export const AfCycleStatusInput = ProjectRootInput.extend({
   limit: z.number().int().min(1).max(100).optional().default(20),
 });
 
-export type AfCodexReadinessInputType = z.infer<typeof AfCodexReadinessInput>;
+export type AfCodexReadinessInputType = z.input<typeof AfCodexReadinessInput>;
 export type AfCyclePreviewInputType = z.infer<typeof AfCyclePreviewInput>;
 export type AfCycleStatusInputType = z.infer<typeof AfCycleStatusInput>;
 
@@ -74,22 +75,21 @@ export async function afCodexReadiness(
   const projectRoot = trustedRoot.data as string;
   const args = ['codex', 'readiness', '--project-root', projectRoot, '--json'];
   if (input.skipLogin === true) args.push('--skip-login');
+  args.push(input.includeDoctor === true ? '--doctor' : '--skip-doctor');
 
   const cli = resolveCli(projectRoot);
   if (!cli.ok) return cli;
 
-  const run = await runCli(cli.data as string, args, projectRoot, 30_000);
-  if (!run.ok) return run;
-
-  try {
-    return { ok: true, data: JSON.parse(String(run.data)), error: null };
-  } catch {
-    return {
-      ok: false,
-      data: { stdout: run.data },
-      error: { code: 'READINESS_PARSE_ERROR', message: 'CLI readiness output was not valid JSON.' },
-    };
+  const run = await runCli(cli.data as string, args, projectRoot, 75_000);
+  if (!run.ok) {
+    const stdout = readRecord(run.data)['stdout'];
+    if (typeof stdout === 'string' && stdout.trim().length > 0) {
+      return parseReadinessJson(stdout);
+    }
+    return run;
   }
+
+  return parseReadinessJson(String(run.data));
 }
 
 export async function afCyclePreview(
@@ -223,6 +223,18 @@ function samePath(left: string, right: string): boolean {
   const resolvedRight = resolve(right);
   if (process.platform === 'win32') return resolvedLeft.toLowerCase() === resolvedRight.toLowerCase();
   return resolvedLeft === resolvedRight;
+}
+
+function parseReadinessJson(stdout: string): ToolResult {
+  try {
+    return { ok: true, data: JSON.parse(stdout), error: null };
+  } catch {
+    return {
+      ok: false,
+      data: { stdout },
+      error: { code: 'READINESS_PARSE_ERROR', message: 'CLI readiness output was not valid JSON.' },
+    };
+  }
 }
 
 function resolveCli(defaultProjectRoot: string | undefined): ToolResult {

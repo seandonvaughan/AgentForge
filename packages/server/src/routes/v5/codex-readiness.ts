@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { resolve } from 'node:path';
-import { buildCodexReadinessReport } from '@agentforge/core';
+import { buildCodexReadinessReport, redactCodexReadinessText } from '@agentforge/core';
+
+type CodexReadinessReport = ReturnType<typeof buildCodexReadinessReport>;
+type CodexReadinessReportBuilder = typeof buildCodexReadinessReport;
+const DEFAULT_READINESS_CACHE_TTL_MS = 300_000;
 
 interface CodexReadinessQuery {
   projectRoot?: string;
@@ -21,8 +25,15 @@ function samePath(left: string, right: string): boolean {
 
 export async function codexReadinessRoutes(
   app: FastifyInstance,
-  opts: { projectRoot?: string } = {},
+  opts: {
+    projectRoot?: string;
+    readinessReportBuilder?: CodexReadinessReportBuilder;
+    readinessCacheTtlMs?: number;
+  } = {},
 ): Promise<void> {
+  const cacheTtlMs = opts.readinessCacheTtlMs ?? parseCacheTtlMs(process.env['CODEX_READINESS_CACHE_TTL_MS']);
+  let cachedReport: { key: string; expiresAt: number; report: CodexReadinessReport } | undefined;
+
   app.get<{ Querystring: CodexReadinessQuery }>('/api/v5/codex/readiness', async (req, reply) => {
     const projectRoot = resolve(opts.projectRoot || process.cwd());
     const requestedProjectRoot = req.query.projectRoot?.trim();
@@ -34,11 +45,24 @@ export async function codexReadinessRoutes(
     }
     const skipLogin = parseBoolean(req.query.skipLogin);
     const includeDoctor = parseBoolean(req.query.includeDoctor);
-    const report = buildCodexReadinessReport({
-      projectRoot,
-      checkLogin: !skipLogin,
-      checkDoctor: includeDoctor,
-    });
+    const buildReport = opts.readinessReportBuilder ?? buildCodexReadinessReport;
+    const cacheKey = `${projectRoot}\0skipLogin=${skipLogin}\0includeDoctor=${includeDoctor}`;
+    const now = Date.now();
+    let cacheHit = false;
+    let report: CodexReadinessReport;
+    if (cacheTtlMs > 0 && cachedReport?.key === cacheKey && cachedReport.expiresAt > now) {
+      cacheHit = true;
+      report = cachedReport.report;
+    } else {
+      report = buildReport({
+        projectRoot,
+        checkLogin: !skipLogin,
+        checkDoctor: includeDoctor,
+      });
+    }
+    if (!cacheHit && cacheTtlMs > 0) {
+      cachedReport = { key: cacheKey, expiresAt: now + cacheTtlMs, report };
+    }
 
     const status = report.ready ? 'ready' : 'degraded';
 
@@ -51,6 +75,12 @@ export async function codexReadinessRoutes(
           agentCount: report.agents.length,
           warningCount: report.warnings.length,
           codexCliAvailable: report.codexCliAvailable,
+          codexExecProbeChecked: report.codexExecProbeChecked,
+          codexExecProbeOk: report.codexExecProbeOk,
+          codexExecProbeStatus: report.codexExecProbeStatus,
+          codexExecProbeLaunchKind: report.codexExecProbeLaunchKind ?? null,
+          codexExecProbeExitCode: report.codexExecProbeExitCode ?? null,
+          codexExecProbeDurationMs: report.codexExecProbeDurationMs ?? null,
           codexDoctorChecked: report.codexDoctorChecked,
           codexDoctorOk: report.codexDoctorOk,
           codexDoctorStatus: report.codexDoctorStatus ?? null,
@@ -63,6 +93,11 @@ export async function codexReadinessRoutes(
           cli: {
             label: 'Codex CLI',
             ok: report.codexCliAvailable,
+          },
+          exec: {
+            label: 'Codex exec preflight',
+            ok: report.codexExecProbeOk,
+            detail: codexExecProbeDetail(report),
           },
           doctor: {
             label: 'Codex doctor',
@@ -89,11 +124,35 @@ export async function codexReadinessRoutes(
           },
         },
         agents: report.agents,
-        warnings: report.warnings,
+        warnings: report.warnings.map((warning) => redactReadinessDetail(warning, report.projectRoot)),
       },
       meta: {
         timestamp: new Date().toISOString(),
+        cached: cacheHit,
+        cacheTtlMs,
       },
     });
   });
+}
+
+function parseCacheTtlMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return DEFAULT_READINESS_CACHE_TTL_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_READINESS_CACHE_TTL_MS;
+  return Math.floor(parsed);
+}
+
+function codexExecProbeDetail(report: CodexReadinessReport): string | undefined {
+  const detail = [
+    `status ${report.codexExecProbeStatus}`,
+    report.codexExecProbeLaunchKind ? `launch ${report.codexExecProbeLaunchKind}` : null,
+    report.codexExecProbeExitCode !== undefined ? `exit ${report.codexExecProbeExitCode ?? 'null'}` : null,
+    report.codexExecProbeDurationMs !== undefined ? `${report.codexExecProbeDurationMs}ms` : null,
+    report.codexExecProbeMessage ?? null,
+  ].filter(Boolean).join(', ');
+  return redactReadinessDetail(detail, report.projectRoot);
+}
+
+function redactReadinessDetail(value: string, projectRoot: string): string {
+  return redactCodexReadinessText(value, { projectRoot });
 }
