@@ -13,14 +13,59 @@
  * Fastify to fully resolve the plugin tree, which is what surfaces duplicate
  * registrations.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+const buildCodexReadinessReportMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@agentforge/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agentforge/core')>();
+  return {
+    ...actual,
+    buildCodexReadinessReport: buildCodexReadinessReportMock,
+  };
+});
+
 import { createServerV5 } from '../server.js';
 
 let createdApps: Array<{ close: () => Promise<void> }> = [];
 let tmpDirs: string[] = [];
+
+beforeEach(() => {
+  buildCodexReadinessReportMock.mockImplementation((options: { projectRoot?: string } = {}) => ({
+    projectRoot: options.projectRoot ?? process.cwd(),
+    codexCliAvailable: true,
+    codexCliLaunchKind: 'path-command',
+    codexExecProbeChecked: true,
+    codexExecProbeOk: true,
+    codexExecProbeStatus: 'passed',
+    codexExecProbeLaunchKind: 'path-command',
+    codexExecProbeExitCode: 0,
+    codexExecProbeDurationMs: 10,
+    codexExecProbeMessage: 'codex exec preflight completed.',
+    codexDoctorChecked: false,
+    codexDoctorOk: null,
+    mcpServerAvailable: true,
+    mcpServerPath: join(options.projectRoot ?? process.cwd(), 'packages', 'mcp-server', 'dist', 'index.js'),
+    codexLoginChecked: false,
+    codexLoginOk: null,
+    codexAuthStatus: 'missing',
+    codexAuthReason: 'CODEX_HOME/auth.json was not found.',
+    agents: [{
+      agentId: 'coder',
+      name: 'Coder',
+      tier: 'sonnet',
+      sourceModel: 'sonnet',
+      codexModel: 'gpt-5.5',
+      codexEffort: 'high',
+      valid: true,
+    }],
+    warnings: [],
+    ready: true,
+  }));
+});
 
 afterEach(async () => {
   for (const app of createdApps) {
@@ -89,6 +134,8 @@ describe('createServerV5 boot', () => {
     const res = await app.inject({ method: 'GET', url: '/api/v5/codex/readiness?skipLogin=true' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toHaveProperty('data.summary.codexCliAvailable');
+    expect(res.json()).toHaveProperty('data.summary.codexExecProbeStatus', 'passed');
+    expect(res.json()).toHaveProperty('data.checks.exec.ok', true);
   });
 
   it('does not serve static HTML — no static path registered without dashboardPath', async () => {
