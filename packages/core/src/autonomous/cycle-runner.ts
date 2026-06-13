@@ -84,7 +84,7 @@ import {
 import { KillSwitch } from './kill-switch.js';
 import { CycleLogger } from './cycle-logger.js';
 import { renderPrBody } from './pr-body-renderer.js';
-import type { RealTestRunner } from './exec/real-test-runner.js';
+import { TestRunnerError, type RealTestRunner } from './exec/real-test-runner.js';
 import type { GitOps } from './exec/git-ops.js';
 import type { PROpener } from './exec/pr-opener.js';
 import { runAutoReforge, extractInvolvedAgentIds } from './auto-reforge.js';
@@ -628,6 +628,55 @@ function extractSubprocessError(err: unknown): string {
   const stdoutStr = (e.stdout?.toString() ?? '').trim();
   const text = stderrStr || stdoutStr || e.message || String(err);
   return text.slice(0, 2000);
+}
+
+interface VerifySupplementalSummary {
+  gatekeeper?: unknown;
+  canary?: unknown;
+  verifyGate?: unknown;
+  testRunnerError?: {
+    name: string;
+    message: string;
+  };
+  requiresFullGates?: boolean;
+  epicIntegration?: {
+    branch: string;
+    epicId: string;
+  };
+}
+
+function readFirstPresent(source: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (source[key] !== undefined) return source[key];
+  }
+  return undefined;
+}
+
+function extractVerifySupplementalSummary(testResult: TestResult): VerifySupplementalSummary {
+  const source = testResult as TestResult & Record<string, unknown>;
+  const gatekeeper = readFirstPresent(source, [
+    'gatekeeper',
+    'gatekeeperSummary',
+    'gatekeeperFindings',
+  ]);
+  const canary = readFirstPresent(source, [
+    'canary',
+    'canarySummary',
+    'codexReadinessCanary',
+  ]);
+  const verifyGate = readFirstPresent(source, [
+    'verifyGate',
+    'verifyGateSummary',
+  ]);
+  return {
+    ...(gatekeeper !== undefined ? { gatekeeper } : {}),
+    ...(canary !== undefined ? { canary } : {}),
+    ...(verifyGate !== undefined ? { verifyGate } : {}),
+  };
+}
+
+function hasVerifySupplementalSummary(summary: VerifySupplementalSummary): boolean {
+  return Object.keys(summary).length > 0;
 }
 
 export interface CycleRunnerOptions {
@@ -1328,6 +1377,7 @@ export class CycleRunner {
     passRate: 0,
     newFailures: [],
   };
+  private verifySummary: VerifySupplementalSummary = {};
   private scoringFallback: 'static' | 'effort-estimator' | undefined;
   private gateVerdict: 'APPROVE' | 'REJECT' | undefined = undefined;
   /** Set in runStages() when prMode='multi'; used to drain at cycle end. */
@@ -1873,13 +1923,72 @@ export class CycleRunner {
       status: 'running',
       currentStep: 'verify',
       detail: 'running project test command',
+      ...(hasVerifySupplementalSummary(this.verifySummary)
+        ? { extra: { verify: this.verifySummary } }
+        : {}),
     });
+    if (this.epicIntegration?.requiresFullGates === true) {
+      this.verifySummary = {
+        ...this.verifySummary,
+        requiresFullGates: true,
+        epicIntegration: {
+          branch: this.epicIntegration.branch,
+          epicId: this.epicIntegration.epicId,
+        },
+      };
+      this.logger.flushCycleStatus({
+        stage: CycleStage.VERIFY,
+        status: 'running',
+        currentStep: 'full-gates',
+        detail: 'epic integration requires full verify gates',
+        extra: { verify: this.verifySummary },
+      });
+      this.options.bus.publish('sprint.phase.verify.step', {
+        cycleId: this.cycleId,
+        step: 'full-gates-required',
+        branch: this.epicIntegration.branch,
+        epicId: this.epicIntegration.epicId,
+        requiresFullGates: true,
+      });
+    }
     this.options.bus.publish('sprint.phase.verify.step', {
       cycleId: this.cycleId,
       step: 'tests-started',
       detail: this.options.config.testing.command,
     });
-    const testResult = await this.options.testRunner.run(this.cycleId);
+    let testResult: TestResult;
+    try {
+      testResult = await this.options.testRunner.run(this.cycleId);
+    } catch (err) {
+      if (err instanceof TestRunnerError) {
+        this.verifySummary = {
+          ...this.verifySummary,
+          testRunnerError: {
+            name: err.name,
+            message: err.message,
+          },
+        };
+        this.logger.flushCycleStatus({
+          stage: CycleStage.VERIFY,
+          status: 'tests-failed',
+          currentStep: 'verify',
+          detail: err.message,
+          extra: { verify: this.verifySummary },
+        });
+        this.options.bus.publish('sprint.phase.verify.step', {
+          cycleId: this.cycleId,
+          step: 'tests-failed',
+          errorName: err.name,
+          error: err.message,
+        });
+      }
+      throw err;
+    }
+    const verifySummary = extractVerifySupplementalSummary(testResult);
+    this.verifySummary = {
+      ...this.verifySummary,
+      ...verifySummary,
+    };
     this.logger.logTestRun(testResult);
     this.logger.flushCycleStatus({
       stage: CycleStage.VERIFY,
@@ -1893,6 +2002,9 @@ export class CycleRunner {
           total: testResult.total,
           passRate: testResult.passRate,
         },
+        ...(hasVerifySupplementalSummary(this.verifySummary)
+          ? { verify: this.verifySummary }
+          : {}),
       },
     });
     this.options.bus.publish('sprint.phase.verify.step', {
@@ -1902,6 +2014,9 @@ export class CycleRunner {
       failed: testResult.failed,
       total: testResult.total,
       passRate: testResult.passRate,
+      ...(hasVerifySupplementalSummary(this.verifySummary)
+        ? { verify: this.verifySummary }
+        : {}),
     });
     this.testStats = {
       passed: testResult.passed,
@@ -2850,7 +2965,7 @@ Cycle: ${this.cycleId}
     stage: CycleStage,
     overrides: Partial<CycleResult> = {},
   ): CycleResult {
-    const base: CycleResult = {
+    const base: CycleResult & { verify?: VerifySupplementalSummary } = {
       cycleId: this.cycleId,
       sprintVersion: this.sprintVersion,
       stage,
@@ -2893,7 +3008,11 @@ Cycle: ${this.cycleId}
         epicId: this.epicIntegration.epicId,
         pushed: this.epicIntegrationPushedSha !== null,
         mergedBranches: [...this.epicIntegration.mergedBranches],
+        ...(this.epicIntegration.requiresFullGates === true ? { requiresFullGates: true } : {}),
       };
+    }
+    if (hasVerifySupplementalSummary(this.verifySummary)) {
+      base.verify = this.verifySummary;
     }
     const merged: CycleResult = { ...base, ...overrides };
     // v6.4.4 bug #2: propagate `error` field so FAILED cycles surface the
