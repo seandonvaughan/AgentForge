@@ -110,6 +110,9 @@ export function buildCodexReadinessReport(options: {
   if (doctor.checked && doctor.ok === false) {
     warnings.push(doctor.message ?? `codex doctor reported ${doctor.status ?? 'a failing status'}.`);
   }
+  if (doctor.checked && doctor.ok === null && doctor.message) {
+    warnings.push(doctor.message);
+  }
   for (const check of doctor.checks ?? []) {
     if (check.status === 'warning') {
       warnings.push(`codex doctor warning (${check.id}): ${check.summary ?? 'warning'}`);
@@ -249,6 +252,14 @@ function checkCodexDoctor(doctorJson: string | undefined, codexSpawnOptions: Cod
     });
 
     if (result.error) {
+      const code = (result.error as NodeJS.ErrnoException).code;
+      if (code === 'ETIMEDOUT') {
+        return {
+          checked: true,
+          ok: null,
+          message: 'codex doctor timed out after 20000ms; continuing with CLI identity and login checks.',
+        };
+      }
       return {
         checked: true,
         ok: false,

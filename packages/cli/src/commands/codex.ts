@@ -5,6 +5,7 @@ interface ReadinessOptions {
   projectRoot: string;
   json?: boolean;
   skipLogin?: boolean;
+  skipDoctor?: boolean;
 }
 
 export function registerCodexCommand(program: Command): void {
@@ -18,10 +19,12 @@ export function registerCodexCommand(program: Command): void {
     .option('--project-root <path>', 'Project root', process.cwd())
     .option('--json', 'Print machine-readable JSON')
     .option('--skip-login', 'Skip codex login status check')
+    .option('--skip-doctor', 'Skip codex doctor check')
     .action((options: ReadinessOptions) => {
       const report = buildCodexReadinessReport({
         projectRoot: options.projectRoot,
         checkLogin: options.skipLogin ? false : true,
+        checkDoctor: options.skipDoctor ? false : true,
       });
 
       if (options.json) {

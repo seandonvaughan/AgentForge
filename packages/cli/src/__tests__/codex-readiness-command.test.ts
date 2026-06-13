@@ -42,15 +42,16 @@ describe('agentforge codex readiness', () => {
     process.exitCode = undefined;
   });
 
-  it('prints readiness JSON and skips login check with --json --skip-login', async () => {
+  it('prints readiness JSON and skips login and doctor checks with --json --skip-login --skip-doctor', async () => {
     const program = createCliProgram();
     program.exitOverride();
 
-    await program.parseAsync(['codex', 'readiness', '--json', '--skip-login'], { from: 'user' });
+    await program.parseAsync(['codex', 'readiness', '--json', '--skip-login', '--skip-doctor'], { from: 'user' });
 
     expect(captures.buildCodexReadinessReport).toHaveBeenCalledWith({
       projectRoot: process.cwd(),
       checkLogin: false,
+      checkDoctor: false,
     });
     expect(consoleError).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
@@ -73,6 +74,7 @@ describe('agentforge codex readiness', () => {
     expect(captures.buildCodexReadinessReport).toHaveBeenCalledWith({
       projectRoot: '/tmp/agentforge',
       checkLogin: true,
+      checkDoctor: true,
     });
     expect(consoleError).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);

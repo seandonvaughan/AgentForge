@@ -117,4 +117,44 @@ describe('buildCodexReadinessReport launch options', () => {
       }),
     );
   });
+
+  it('warns but stays ready when codex doctor times out', () => {
+    projectRoot = join(tmpdir(), `agentforge-codex-doctor-timeout-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    mkdirSync(join(projectRoot, '.agentforge', 'agents'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.agentforge', 'agents', 'coder.yaml'),
+      ['name: Coder', 'model: sonnet', 'system_prompt: You write code.', ''].join('\n'),
+      'utf8',
+    );
+    const mcpServerPath = join(projectRoot, 'mcp-server.js');
+    writeFileSync(mcpServerPath, 'console.log("ok");\n', 'utf8');
+
+    spawnSyncMock.mockImplementation((_command: string, args: string[]) => {
+      if (args[0] === '--version') {
+        return { status: 0, stdout: 'codex-cli 0.140.0\n', stderr: '' };
+      }
+      if (args[0] === 'doctor') {
+        return {
+          status: null,
+          stdout: '',
+          stderr: '',
+          error: Object.assign(new Error('spawnSync codex ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+        };
+      }
+      return { status: 1, stdout: '', stderr: `unexpected args: ${args.join(' ')}` };
+    });
+
+    const report = buildCodexReadinessReport({
+      projectRoot,
+      checkLogin: false,
+      mcpServerPath,
+      env: { AGENTFORGE_CODEX_BIN: '/opt/openai/codex/bin/codex' },
+      codexSpawnOptions: { platform: 'linux' },
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.codexDoctorChecked).toBe(true);
+    expect(report.codexDoctorOk).toBeNull();
+    expect(report.warnings.some((warning) => warning.includes('codex doctor timed out'))).toBe(true);
+  });
 });
