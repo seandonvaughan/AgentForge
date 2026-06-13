@@ -33,6 +33,7 @@ import {
   MessageBusV2,
   ScoringPipeline,
   BudgetApproval,
+  TestRunnerError,
 } from '@agentforge/core';
 import * as autoReforgeModule from '../../../packages/core/src/autonomous/auto-reforge.js';
 import { GateRejectedError } from '../../../packages/core/src/autonomous/phase-handlers/gate-phase.js';
@@ -349,6 +350,175 @@ describe('CycleRunner', () => {
     expect(result.pr.url).toBeDefined();
     expect(result.pr.url).not.toBeNull();
     expect(result.cost.totalUsd).toBeGreaterThan(0);
+  });
+
+  it('surfaces Gatekeeper and Canary verify summaries, including full-gate epic requirements', async () => {
+    await initGitRepo(tmpDir);
+    await execFileAsync('git', ['branch', 'codex/epic-gates', 'main'], { cwd: tmpDir });
+    const deps = makeMockDeps();
+    const gatekeeper = {
+      ok: false,
+      findings: [
+        {
+          code: 'missing-verifier-test',
+          severity: 'failure',
+          message: 'Package changes must include verifier-discoverable tests.',
+          affectedFiles: ['packages/core/src/autonomous/cycle-runner.ts'],
+        },
+      ],
+    };
+    const canary = {
+      status: 'failed',
+      message: 'codex readiness canary failed',
+    };
+    const verifyGate = {
+      mode: 'full',
+      exitCode: 0,
+      changedFileCount: 2,
+    };
+    const preVerify = vi.fn(async () => ({ buildOk: true, typeCheckOk: true }));
+    const testRunner = vi.fn(async (cycleId: string) => ({
+      passed: 100,
+      failed: 0,
+      skipped: 0,
+      total: 100,
+      passRate: 1.0,
+      durationMs: 5000,
+      failedTests: [],
+      newFailures: [],
+      rawOutputPath: `.agentforge/cycles/${cycleId}/tests-raw.log`,
+      exitCode: 0,
+      gatekeeperSummary: gatekeeper,
+      canarySummary: canary,
+      verifyGateSummary: verifyGate,
+    }));
+    deps.preVerifyTypeCheck = preVerify;
+    deps.testRunner.run = testRunner as any;
+    deps.mockPhaseHandlers.execute = async (ctx: any) => {
+      ctx.bus.publish('sprint.phase.completed', {
+        sprintId: ctx.sprintId,
+        phase: 'execute',
+        cycleId: ctx.cycleId,
+        result: {
+          phase: 'execute',
+          status: 'completed',
+          durationMs: 500,
+          costUsd: 1.0,
+          agentRuns: [],
+          itemResults: [],
+          epicIntegration: {
+            branch: 'codex/epic-gates',
+            epicId: 'epic-gates',
+            mergedBranches: ['codex/c1'],
+            hadConflicts: false,
+            requiresFullGates: true,
+          },
+        },
+        completedAt: new Date().toISOString(),
+      });
+    };
+    const verifyEvents: any[] = [];
+    deps.bus.subscribe('sprint.phase.verify.step', (event: any) => {
+      verifyEvents.push(event);
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      objective: 'ship an epic that touches gate configuration',
+      worktreePool: { listActive: async () => [] } as any,
+    });
+
+    const result = await runner.start();
+
+    expect(preVerify).toHaveBeenCalledOnce();
+    expect(testRunner).toHaveBeenCalledOnce();
+    expect(result.stage).toBe(CycleStage.COMPLETED);
+    expect(verifyEvents.map((event) => event.step)).toEqual([
+      'full-gates-required',
+      'tests-started',
+      'tests-complete',
+    ]);
+    expect(verifyEvents[0]).toMatchObject({
+      branch: 'codex/epic-gates',
+      epicId: 'epic-gates',
+      requiresFullGates: true,
+    });
+    expect(verifyEvents[2].verify).toMatchObject({
+      requiresFullGates: true,
+      gatekeeper,
+      canary,
+      verifyGate,
+    });
+    const cycleJsonPath = join(tmpDir, '.agentforge/cycles', result.cycleId, 'cycle.json');
+    const cycleJson = JSON.parse(readFileSync(cycleJsonPath, 'utf8'));
+    expect(cycleJson.verify.gatekeeper.findings).toEqual(gatekeeper.findings);
+    expect(cycleJson.verify.canary).toEqual(canary);
+    expect(cycleJson.verify.requiresFullGates).toBe(true);
+    expect(cycleJson.epicIntegration.requiresFullGates).toBe(true);
+    expect((result as any).verify.gatekeeper.findings).toEqual(gatekeeper.findings);
+  });
+
+  it('fails loudly when VERIFY test collection raises an uncollected-test TestRunnerError', async () => {
+    const deps = makeMockDeps();
+    const preVerify = vi.fn(async () => ({ buildOk: true, typeCheckOk: true }));
+    const testRunner = vi.fn(async () => {
+      throw new TestRunnerError(
+        'Verify-gate reported uncollected tests and vitest collected zero tests. Remediation: run the verify gate in full mode.',
+      );
+    });
+    deps.preVerifyTypeCheck = preVerify;
+    deps.testRunner.run = testRunner as any;
+    const verifyEvents: any[] = [];
+    deps.bus.subscribe('sprint.phase.verify.step', (event: any) => {
+      verifyEvents.push(event);
+    });
+
+    const runner = new CycleRunner({
+      cwd: tmpDir,
+      config: DEFAULT_CYCLE_CONFIG,
+      runtime: deps.runtime as any,
+      proposalAdapter: deps.proposalAdapter as any,
+      scoringAdapter: deps.scoringAdapter as any,
+      phaseHandlers: deps.mockPhaseHandlers as any,
+      testRunner: deps.testRunner as any,
+      gitOps: deps.gitOps as any,
+      prOpener: deps.prOpener as any,
+      bus: deps.bus as any,
+      preVerifyTypeCheck: deps.preVerifyTypeCheck,
+      dryRun: { prOpener: true },
+    });
+
+    const result = await runner.start();
+
+    expect(preVerify).toHaveBeenCalledOnce();
+    expect(testRunner).toHaveBeenCalledOnce();
+    expect(result.stage).toBe(CycleStage.FAILED);
+    expect(result.error).toContain('Verify-gate reported uncollected tests');
+    expect(verifyEvents.map((event) => event.step)).toEqual([
+      'tests-started',
+      'tests-failed',
+    ]);
+    expect(verifyEvents[1]).toMatchObject({
+      errorName: 'TestRunnerError',
+      error: expect.stringContaining('uncollected tests'),
+    });
+    const cycleJsonPath = join(tmpDir, '.agentforge/cycles', result.cycleId, 'cycle.json');
+    const cycleJson = JSON.parse(readFileSync(cycleJsonPath, 'utf8'));
+    expect(cycleJson.stage).toBe('failed');
+    expect(cycleJson.verify.testRunnerError).toMatchObject({
+      name: 'TestRunnerError',
+      message: expect.stringContaining('uncollected tests'),
+    });
   });
 
   it('writes an audit resume checkpoint before the first scheduled phase starts', async () => {
