@@ -144,3 +144,6 @@ The package CLI (`packages/cli/src/`) has **fully migrated** all command functio
 1. ✅ Compat bridge removal
 2. ✅ Invoke --loop consolidation (single-sourced in package CLI)
 3. ✅ Deprecation warning injection (centralized in package CLI)
+
+## Cycle Review Canary
+- 2026-06-13: Codex-mode recovery canary exercised AGENTFORGE_RUNTIME override evidence inline for the cycle review consumer.
