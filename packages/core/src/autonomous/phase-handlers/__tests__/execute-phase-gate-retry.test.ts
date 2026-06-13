@@ -37,7 +37,14 @@ function makeBus() {
 }
 
 function writeSprint(
-  items: Array<{ id: string; title: string; assignee: string; files: string[] }>,
+  items: Array<{
+    id: string;
+    title: string;
+    assignee: string;
+    files: string[];
+    wave?: number;
+    predecessors?: string[];
+  }>,
 ): void {
   const data = {
     version: '1.0.0',
@@ -47,6 +54,8 @@ function writeSprint(
       title: i.title,
       assignee: i.assignee,
       files: i.files,
+      ...(i.wave !== undefined ? { wave: i.wave } : {}),
+      ...(i.predecessors !== undefined ? { predecessors: i.predecessors } : {}),
       status: 'planned',
       tags: [],
       description: i.title,
@@ -177,6 +186,74 @@ describe('execute phase — gate-retry routes findings to the owning item', () =
 
     // No item matched → safe fallback: re-execute all (no regression vs old behavior).
     expect(runtime.run).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries prior failed and blocked items plus dependent closure on gate retry', async () => {
+    writeProjectFiles(['packages/a.ts', 'packages/b.ts', 'packages/c.ts']);
+    writeSprint([
+      { id: 'a', title: 'A', assignee: 'a-agent', files: ['packages/a.ts'], wave: 0 },
+      { id: 'b', title: 'B depends on A', assignee: 'b-agent', files: ['packages/b.ts'], wave: 1, predecessors: ['a'] },
+      { id: 'c', title: 'C independent', assignee: 'c-agent', files: ['packages/c.ts'], wave: 0 },
+    ]);
+    const calls: string[] = [];
+    const runtime = {
+      run: vi.fn().mockImplementation(async (agentId: string) => {
+        calls.push(agentId);
+        return { output: 'fixed', costUsd: 0.01 };
+      }),
+    };
+    const gateRetry = {
+      attempt: 1,
+      rationale: 'Gate rejected after incomplete execute phase',
+      failedItemIds: ['a'],
+      blockedItemIds: ['b'],
+      timeoutItemIds: ['a'],
+      findings: ['a timed out; b was blocked by a'],
+    };
+
+    const result = await runExecutePhase(makeCtx(runtime, gateRetry), {
+      maxParallelism: 2,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+    });
+
+    expect(runtime.run).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual(['a-agent', 'b-agent']);
+    const rows = (result.itemResults ?? []) as Array<{ itemId: string; status: string; response: string }>;
+    const byId = new Map(rows.map((r) => [r.itemId, r] as const));
+    expect(byId.get('a')?.status).toBe('completed');
+    expect(byId.get('b')?.status).toBe('completed');
+    expect(byId.get('c')?.response).toContain('kept');
+  });
+
+  it('passes a bumped timeoutMs when a gate retry is recovering a timeout item', async () => {
+    writeSprint([
+      { id: 'item-A', title: 'A', assignee: 'a', files: [] },
+    ]);
+    const runtime = { run: vi.fn().mockResolvedValue({ output: 'done', costUsd: 0.01 }) };
+    const gateRetry = {
+      attempt: 1,
+      rationale: 'Gate rejected after timeout',
+      failedItemIds: ['item-A'],
+      timeoutItemIds: ['item-A'],
+    };
+
+    await runExecutePhase(makeCtx(runtime, gateRetry), {
+      maxParallelism: 1,
+      maxItemRetries: 0,
+      disableWorktrees: true,
+      selfEvalDisabled: true,
+      itemTimeoutMs: 100,
+      retryTimeoutMultiplier: 3,
+      retryTimeoutMaxMs: 250,
+    });
+
+    expect(runtime.run).toHaveBeenCalledWith(
+      'a',
+      expect.any(String),
+      expect.objectContaining({ timeoutMs: 250 }),
+    );
   });
 
   it('re-executes all items when there is no gate-retry (normal first pass)', async () => {

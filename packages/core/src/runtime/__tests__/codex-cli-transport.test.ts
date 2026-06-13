@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -188,6 +189,69 @@ describe('CodexCliTransport.buildCodexArgs', () => {
     expect(args.at(-1)).toBe('-');
     expect(args).not.toContain('--sandbox');
     expect(args).not.toContain('--cd');
+  });
+});
+
+describe('CodexCliTransport timeout cleanup', () => {
+  it('waits for the child process close event after requesting termination', async () => {
+    const transport = new CodexCliTransport();
+    const fakeProc = new EventEmitter() as EventEmitter & {
+      exitCode: number | null;
+      signalCode: NodeJS.Signals | null;
+    };
+    fakeProc.exitCode = null;
+    fakeProc.signalCode = null;
+    const terminate = vi
+      .spyOn(transport as unknown as { terminateProcessTree: (proc: unknown) => void }, 'terminateProcessTree')
+      .mockImplementation(() => {});
+
+    let settled = false;
+    const cleanup = (transport as unknown as {
+      terminateProcessTreeAndWait: (proc: unknown, cleanupTimeoutMs: number) => Promise<void>;
+    }).terminateProcessTreeAndWait(fakeProc, 1_000).then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(terminate).toHaveBeenCalledWith(fakeProc);
+    expect(settled).toBe(false);
+
+    fakeProc.emit('close');
+    await cleanup;
+    expect(settled).toBe(true);
+  });
+
+  it('settles cleanup after the timeout when the child never closes', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new CodexCliTransport();
+      const fakeProc = new EventEmitter() as EventEmitter & {
+        exitCode: number | null;
+        signalCode: NodeJS.Signals | null;
+      };
+      fakeProc.exitCode = null;
+      fakeProc.signalCode = null;
+      const terminate = vi
+        .spyOn(transport as unknown as { terminateProcessTree: (proc: unknown) => void }, 'terminateProcessTree')
+        .mockImplementation(() => {});
+
+      let settled = false;
+      const cleanup = (transport as unknown as {
+        terminateProcessTreeAndWait: (proc: unknown, cleanupTimeoutMs: number) => Promise<void>;
+      }).terminateProcessTreeAndWait(fakeProc, 1_000).then(() => {
+        settled = true;
+      });
+
+      await Promise.resolve();
+      expect(terminate).toHaveBeenCalledWith(fakeProc);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await cleanup;
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

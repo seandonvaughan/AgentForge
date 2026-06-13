@@ -83,6 +83,10 @@ export interface LedgerEntry {
   itemIds: string[];
   status: 'open' | 'dry-run' | 'skipped-no-gh' | 'merged';
   openedAt: string;
+  attempt?: number;
+  headSha?: string;
+  stageSha?: string;
+  updatedAt?: string;
 }
 
 export interface DrainResult {
@@ -150,8 +154,29 @@ function appendToLedger(ledgerPath: string, entry: LedgerEntry): void {
   writeLedger(ledgerPath, entries);
 }
 
-function ledgerHasBranchEntry(ledgerPath: string, branch: string): boolean {
-  return readLedger(ledgerPath).some((entry) => entry.branch === branch);
+function findLedgerBranchEntry(ledgerPath: string, branch: string): LedgerEntry | undefined {
+  return readLedger(ledgerPath).find((entry) => entry.branch === branch);
+}
+
+function refreshLedgerBranchEntry(
+  ledgerPath: string,
+  branch: string,
+  patch: Partial<LedgerEntry>,
+): LedgerEntry | null {
+  const entries = readLedger(ledgerPath);
+  const idx = entries.findIndex((entry) => entry.branch === branch);
+  if (idx < 0) return null;
+  const existing = entries[idx]!;
+  const refreshed: LedgerEntry = {
+    ...existing,
+    ...patch,
+    prNumber: patch.prNumber !== undefined ? patch.prNumber : existing.prNumber,
+    prUrl: patch.prUrl !== undefined ? patch.prUrl : existing.prUrl,
+    openedAt: existing.openedAt,
+  };
+  entries[idx] = refreshed;
+  writeLedger(ledgerPath, entries);
+  return refreshed;
 }
 
 function ledgerBranchKey(cycleId: string, branch: string): string {
@@ -501,11 +526,34 @@ export class MergeQueue {
     const ledgerPath = join(resolveCycleDir(this.projectRoot, cycleId), 'agent-prs.json');
     const branchKey = ledgerBranchKey(cycleId, branch);
 
-    if (this.reservedBranches.has(branchKey) || ledgerHasBranchEntry(ledgerPath, branch)) {
-      console.log(`[MergeQueue] Skipping ${branch} (already recorded for cycle ${cycleId})`);
-      return;
+    if (this.reservedBranches.has(branchKey)) {
+      console.log(`[MergeQueue] Waiting for ${branch} (already being processed for cycle ${cycleId})`);
+      while (this.reservedBranches.has(branchKey)) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
     }
     this.reservedBranches.add(branchKey);
+    const releaseBranchReservation = () => {
+      this.reservedBranches.delete(branchKey);
+    };
+    try {
+    const existingEntry = findLedgerBranchEntry(ledgerPath, branch);
+    const headSha =
+      typeof payload.commitSha === 'string' && payload.commitSha.length > 0
+        ? payload.commitSha
+        : undefined;
+
+    if (
+      existingEntry &&
+      existingEntry.status === 'merged' &&
+      existingEntry.headSha !== undefined &&
+      headSha !== undefined &&
+      existingEntry.headSha === headSha
+    ) {
+      console.log(`[MergeQueue] Skipping ${branch} (same head already merged for cycle ${cycleId})`);
+      this.reservedBranches.delete(branchKey);
+      return;
+    }
 
     // Determine parent branch: override > cycle.json > baseBranch > 'main'
     const parentBranch =
@@ -515,6 +563,36 @@ export class MergeQueue {
       'main';
 
     if (this.dryRun) {
+      if (existingEntry) {
+        const refreshed = refreshLedgerBranchEntry(ledgerPath, branch, {
+          agentId,
+          cycleId,
+          itemIds,
+          status: existingEntry.status === 'merged' ? 'open' : existingEntry.status,
+          ...(headSha !== undefined ? { headSha } : {}),
+          updatedAt: pushedAt,
+        });
+        if (refreshed) {
+          this.bus.publish<MergeQueuePrOpenedPayload>({
+            from: 'system',
+            to: 'broadcast',
+            topic: 'merge-queue.pr.opened',
+            category: 'system',
+            payload: {
+              cycleId,
+              agentId,
+              branch,
+              prNumber: refreshed.prNumber,
+              status: refreshed.status,
+              prUrl: refreshed.prUrl,
+              openedAt: refreshed.openedAt,
+            },
+          });
+          console.log(`[MergeQueue] dry-run — refreshed ${branch} in ledger`);
+          releaseBranchReservation();
+          return;
+        }
+      }
       const entry: LedgerEntry = {
         prNumber: null,
         prUrl: null,
@@ -524,6 +602,8 @@ export class MergeQueue {
         itemIds,
         status: 'dry-run',
         openedAt: new Date().toISOString(),
+        ...(headSha !== undefined ? { headSha } : {}),
+        updatedAt: pushedAt,
       };
       appendToLedger(ledgerPath, entry);
 
@@ -544,7 +624,39 @@ export class MergeQueue {
       });
 
       console.log(`[MergeQueue] dry-run — recorded ${branch} (no gh call)`);
+      releaseBranchReservation();
       return;
+    }
+
+    if (existingEntry && existingEntry.prNumber != null) {
+      const refreshed = refreshLedgerBranchEntry(ledgerPath, branch, {
+        agentId,
+        cycleId,
+        itemIds,
+        status: existingEntry.status === 'merged' ? 'open' : existingEntry.status,
+        ...(headSha !== undefined ? { headSha } : {}),
+        updatedAt: pushedAt,
+      });
+      if (refreshed) {
+        this.bus.publish<MergeQueuePrOpenedPayload>({
+          from: 'system',
+          to: 'broadcast',
+          topic: 'merge-queue.pr.opened',
+          category: 'system',
+          payload: {
+            cycleId,
+            agentId,
+            branch,
+            prNumber: refreshed.prNumber,
+            status: refreshed.status,
+            prUrl: refreshed.prUrl,
+            openedAt: refreshed.openedAt,
+          },
+        });
+        console.log(`[MergeQueue] Refreshed ${branch} in ledger (existing PR #${existingEntry.prNumber})`);
+        releaseBranchReservation();
+        return;
+      }
     }
 
     // Live mode: attempt to open a draft PR
@@ -569,6 +681,8 @@ export class MergeQueue {
         itemIds,
         status: 'open',
         openedAt: pushedAt,
+        ...(headSha !== undefined ? { headSha } : {}),
+        updatedAt: pushedAt,
       };
 
       console.log(`[MergeQueue] Opened draft PR #${prNumber} for ${branch}: ${prUrl}`);
@@ -585,6 +699,8 @@ export class MergeQueue {
         itemIds,
         status: 'skipped-no-gh',
         openedAt: pushedAt,
+        ...(headSha !== undefined ? { headSha } : {}),
+        updatedAt: pushedAt,
       };
     }
 
@@ -605,6 +721,10 @@ export class MergeQueue {
         openedAt: entry.openedAt,
       },
     });
+    releaseBranchReservation();
+    } finally {
+      releaseBranchReservation();
+    }
   }
 }
 

@@ -283,7 +283,7 @@ export const EXECUTE_PHASE_DEFAULT_TOOLS = [
   'Grep',
 ];
 
-interface SprintItem {
+export interface SprintItem {
   id: string;
   title: string;
   description?: string;
@@ -316,6 +316,7 @@ interface ExecutePhaseRunOptions {
   preferredProvider?: ExecutionProviderKind;
   providerPreference?: ExecutionProviderKind[];
   capabilityTier?: ModelTier;
+  timeoutMs?: number;
 }
 
 /** v6.6.0 — File-aware lock manager used by the execute-phase dispatch loop.
@@ -533,6 +534,56 @@ export function fileMatchesFinding(itemFile: string, findingFile: string): boole
   const b = norm(findingFile);
   if (!a || !b) return false;
   return a === b || a.endsWith('/' + b) || b.endsWith('/' + a);
+}
+
+function collectDependentClosure(items: SprintItem[], seedIds: Set<string>): Set<string> {
+  const expanded = new Set(seedIds);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const item of items) {
+      if (expanded.has(item.id)) continue;
+      const predecessors = item.predecessors ?? [];
+      if (predecessors.some((pred) => expanded.has(pred))) {
+        expanded.add(item.id);
+        changed = true;
+      }
+    }
+  }
+  return expanded;
+}
+
+export function computeGateRetryItemIds(
+  items: SprintItem[],
+  itemFiles: Map<string, string[]>,
+  gateRetry?: GateRetryContext,
+): Set<string> | null {
+  if (!gateRetry) return null;
+
+  const planItemIds = new Set(items.map((it) => it.id));
+  const seedIds = new Set<string>();
+  for (const rawId of [
+    ...(gateRetry.itemIds ?? []),
+    ...(gateRetry.failedItemIds ?? []),
+    ...(gateRetry.blockedItemIds ?? []),
+    ...(gateRetry.timeoutItemIds ?? []),
+  ]) {
+    if (typeof rawId === 'string' && planItemIds.has(rawId)) {
+      seedIds.add(rawId);
+    }
+  }
+
+  const gateRetryFiles = gateRetry.files ?? [];
+  if (gateRetryFiles.length > 0) {
+    for (const it of items) {
+      const declared = itemFiles.get(it.id) ?? [];
+      if (declared.some((f) => gateRetryFiles.some((ff) => fileMatchesFinding(f, ff)))) {
+        seedIds.add(it.id);
+      }
+    }
+  }
+
+  return seedIds.size > 0 ? collectDependentClosure(items, seedIds) : null;
 }
 
 interface SprintFile {
@@ -1100,6 +1151,17 @@ export interface ExecutePhaseOptions {
    * inherently skipped for flat (non-epic / non-worktree-isolated) cycles.
    */
   disableChildVerify?: boolean;
+  /**
+   * Per-item runtime timeout. Defaults to the Codex/CLI transport ceiling so
+   * execute.json records an explicit budget and retry attempts can bump it.
+   */
+  itemTimeoutMs?: number;
+  /**
+   * Multiplier applied on gate-retry attempts that are recovering a timeout.
+   */
+  retryTimeoutMultiplier?: number;
+  /** Maximum per-item timeout allowed after applying retryTimeoutMultiplier. */
+  retryTimeoutMaxMs?: number;
 }
 
 export function makeExecutePhaseHandler(options: ExecutePhaseOptions = {}) {
@@ -1132,6 +1194,14 @@ export async function runExecutePhase(
   const maxFailureRate = options.maxFailureRate ?? 0.5;
   const ceilingParallelism = Math.max(1, options.maxParallelism ?? 3);
   const maxItemRetries = Math.max(0, options.maxItemRetries ?? 1);
+  const itemTimeoutMs = Math.max(1, options.itemTimeoutMs ?? 20 * 60 * 1000);
+  const retryTimeoutMultiplier = Math.max(1, options.retryTimeoutMultiplier ?? 2);
+  const retryTimeoutMaxMs = Math.max(itemTimeoutMs, options.retryTimeoutMaxMs ?? 45 * 60 * 1000);
+  const activeItemTimeoutMs =
+    ctx.gateRetry?.timeoutMs ??
+    ((ctx.gateRetry?.timeoutItemIds?.length ?? 0) > 0
+      ? Math.min(retryTimeoutMaxMs, Math.ceil(itemTimeoutMs * retryTimeoutMultiplier))
+      : itemTimeoutMs);
   const selfEvalDisabled = options.selfEvalDisabled === true;
   // T4.2: worktree pool — disabled when either disableWorktrees flag is set or
   // the pool is not present in the context.
@@ -1671,7 +1741,7 @@ export async function runExecutePhase(
           filesHinted: item.files ?? [],
         });
         try {
-          const runOptions: ExecutePhaseRunOptions = { allowedTools };
+          const runOptions: ExecutePhaseRunOptions = { allowedTools, timeoutMs: activeItemTimeoutMs };
           if (worktreeHandle) {
             // T4.2: pass cwd so the runtime runs the agent inside the isolated
             // worktree rather than the main project root.
@@ -2256,31 +2326,11 @@ export async function runExecutePhase(
   const mergedIntoIntegration: string[] = [];
   let integrationHadConflicts = false;
 
-  // === safeguard #2 === Gate-retry finding routing.
-  // On a gate-rejection retry, re-execute ONLY the items whose declared files
-  // match the gate findings; keep the rest (their attempt-1 branch/PR stands).
-  // The cycle-level retry used to tell EVERY item to fix the one finding, so
-  // non-owning agents made no edit and failed "produced no source changes",
-  // blocking the whole cycle (observed in live cycle c6954dbe). If no item
-  // matches the findings, fall back to re-executing all (no regression).
-  let retryImplicatedIds: Set<string> | null = null;
-  const planItemIds = new Set(items.map((it) => it.id));
-  const gateRetryItemIds = (ctx.gateRetry?.itemIds ?? [])
-    .filter((id) => typeof id === 'string' && planItemIds.has(id));
-  if (gateRetryItemIds.length > 0) {
-    retryImplicatedIds = new Set(gateRetryItemIds);
-  }
-  const gateRetryFiles = ctx.gateRetry?.files ?? [];
-  if (!retryImplicatedIds && gateRetryFiles.length > 0) {
-    const implicated = new Set<string>();
-    for (const it of items) {
-      const declared = itemFiles.get(it.id) ?? [];
-      if (declared.some((f) => gateRetryFiles.some((ff) => fileMatchesFinding(f, ff)))) {
-        implicated.add(it.id);
-      }
-    }
-    if (implicated.size > 0) retryImplicatedIds = implicated;
-  }
+  // === safeguard #2 + recovery routing === Gate-retry finding routing.
+  // On a gate-rejection retry, re-execute the union of gate-implicated items
+  // and any prior failed/blocked/timeout items, then expand through dependent
+  // closure so a recovered predecessor actually lets its children run.
+  const retryImplicatedIds = computeGateRetryItemIds(items, itemFiles, ctx.gateRetry);
 
   for (const waveItems of groupItemsByWave(items)) {
     for (const item of waveItems) {
@@ -2763,6 +2813,15 @@ function formatGateRetrySection(gateRetry?: GateRetryContext): string {
   }
   if (gateRetry.itemIds && gateRetry.itemIds.length > 0) {
     lines.push(`Sprint items mapped from the rejected branch: ${gateRetry.itemIds.join(', ')}`);
+  }
+  if (gateRetry.failedItemIds && gateRetry.failedItemIds.length > 0) {
+    lines.push(`Prior failed sprint items to recover: ${gateRetry.failedItemIds.join(', ')}`);
+  }
+  if (gateRetry.blockedItemIds && gateRetry.blockedItemIds.length > 0) {
+    lines.push(`Prior blocked dependent items to unblock: ${gateRetry.blockedItemIds.join(', ')}`);
+  }
+  if (gateRetry.timeoutItemIds && gateRetry.timeoutItemIds.length > 0) {
+    lines.push(`Prior timeout items receiving a larger runtime budget: ${gateRetry.timeoutItemIds.join(', ')}`);
   }
   if (gateRetry.findings && gateRetry.findings.length > 0) {
     lines.push('Gate findings:');

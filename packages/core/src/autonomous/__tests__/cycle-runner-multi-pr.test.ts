@@ -61,6 +61,12 @@ function writeLedger(projectRoot: string, cycleId: string, entries: unknown[]): 
   writeFileSync(p, JSON.stringify(entries, null, 2));
 }
 
+function writeExecutePhase(projectRoot: string, cycleId: string, itemResults: unknown[]): void {
+  const p = join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases', 'execute.json');
+  mkdirSync(join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases'), { recursive: true });
+  writeFileSync(p, JSON.stringify({ phase: 'execute', itemResults }, null, 2));
+}
+
 function buildPayload(overrides: Partial<AgentBranchPushedPayload> = {}): AgentBranchPushedPayload {
   return {
     cycleId: 'test-cycle-id',
@@ -128,6 +134,27 @@ afterEach(() => {
 });
 
 describe('gate retry context — agent PR ledger routing', () => {
+  it('includes prior failed, blocked, and timeout item IDs from execute.json', () => {
+    const cycleId = 'cycle-retry-execute-recovery';
+    writeExecutePhase(projectRoot, cycleId, [
+      { itemId: 'child-10', status: 'failed', failureClass: 'timeout', error: 'codex CLI timed out after 1200000ms' },
+      { itemId: 'child-12', status: 'blocked', error: 'blocked: predecessor child-10 did not complete' },
+      { itemId: 'child-3', status: 'completed' },
+    ]);
+
+    const context = buildGateRetryContext(
+      projectRoot,
+      cycleId,
+      1,
+      'Gate rejected after incomplete execute phase.',
+    );
+
+    expect(context.failedItemIds).toEqual(['child-10']);
+    expect(context.blockedItemIds).toEqual(['child-12']);
+    expect(context.timeoutItemIds).toEqual(['child-10']);
+    expect(context.timeoutMs).toBe(40 * 60 * 1000);
+  });
+
   it('maps itemIds from the exact rejected PR number record', () => {
     const cycleId = 'cycle-retry-pr-number';
     writeLedger(projectRoot, cycleId, [

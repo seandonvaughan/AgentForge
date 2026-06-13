@@ -345,14 +345,20 @@ export class CodexCliTransport implements ExecutionTransport {
           fn();
         };
 
+        const abortWithCleanup = (message: string) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          streamOptions.signal?.removeEventListener('abort', abortHandler);
+          void this.terminateProcessTreeAndWait(proc).finally(() => reject(new Error(message)));
+        };
+
         const abortHandler = () => {
-          this.terminateProcessTree(proc);
-          finish(() => reject(new Error('codex CLI run was aborted')));
+          abortWithCleanup('codex CLI run was aborted');
         };
 
         const timer = setTimeout(() => {
-          this.terminateProcessTree(proc);
-          finish(() => reject(new Error(`codex CLI timed out after ${timeoutMs}ms`)));
+          abortWithCleanup(`codex CLI timed out after ${timeoutMs}ms`);
         }, timeoutMs);
 
         if (streamOptions.signal?.aborted) {
@@ -812,6 +818,35 @@ export class CodexCliTransport implements ExecutionTransport {
       }
     }, 5000);
     force.unref?.();
+  }
+
+  private async terminateProcessTreeAndWait(
+    proc: ChildProcessWithoutNullStreams,
+    cleanupTimeoutMs = 7_000,
+  ): Promise<void> {
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      let done = false;
+      let timer: NodeJS.Timeout | null = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        proc.off('close', finish);
+        resolve();
+      };
+
+      proc.once('close', finish);
+      this.terminateProcessTree(proc);
+      timer = setTimeout(finish, cleanupTimeoutMs);
+      timer.unref?.();
+    });
   }
 
   private buildCostWarnings(request: ExecutionRequest, webSearchCalls: number): string[] {

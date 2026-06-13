@@ -49,6 +49,7 @@
     "sbom:ci": "node scripts/generate-sbom.mjs artifacts/sbom/cyclonedx.json",
     "verify:dashboard": "node scripts/run-pnpm.mjs -- dashboard:check && node scripts/run-pnpm.mjs -- dashboard:build",
     "verify:gatekeeper-canary": "node scripts/run-pnpm.mjs -- test:run && node scripts/run-pnpm.mjs -- test:e2e:dashboard:canary",
+    "verify:cycle-success": "node scripts/verify-cycle-success.mjs",
     "verify:product": "node scripts/run-pnpm.mjs -- check:types && node scripts/run-pnpm.mjs -- verify:gatekeeper-canary",
     "verify:gates": "node scripts/run-pnpm.mjs -- lint && node scripts/run-pnpm.mjs -- check:versions && node scripts/run-pnpm.mjs -- verify:product && node scripts/run-pnpm.mjs -- verify:dashboard && node scripts/run-pnpm.mjs -- check:help && node scripts/run-pnpm.mjs -- check:changelog && node scripts/run-pnpm.mjs -- audit:deps",
     "sprint": "npx tsx scripts/run-sprint.ts",

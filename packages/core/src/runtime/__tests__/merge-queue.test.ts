@@ -52,6 +52,20 @@ function emitBranchPushed(bus: MessageBusV2, payload: AgentBranchPushedPayload):
   });
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -325,7 +339,7 @@ describe('MergeQueue', () => {
     expect(entries).toHaveLength(1);
   });
 
-  it('skips duplicate branch events in the same cycle without adding a ledger row', async () => {
+  it('serializes duplicate branch events in the same cycle without adding a ledger row', async () => {
     makeCycleDir(projectRoot, 'cycle-abc');
 
     const receivedEvents: MergeQueuePrOpenedPayload[] = [];
@@ -364,8 +378,74 @@ describe('MergeQueue', () => {
       { prNumber: 123, branch: 'autonomous/agent-coder-1-sess-1', agentId: 'coder-1' },
     ]);
     expect(draftPrOpener).toHaveBeenCalledTimes(1);
-    expect(receivedEvents).toHaveLength(1);
+    expect(receivedEvents).toHaveLength(2);
     expect(entries[0]!['branch']).toBe('autonomous/agent-coder-1-sess-1');
+    expect(entries[0]!['itemIds']).toEqual(['T4.4', 'T4.5', 'T4.6']);
+  });
+
+  it('refreshes an existing branch ledger row on a later retry push', async () => {
+    makeCycleDir(projectRoot, 'cycle-abc');
+
+    const queue = new MergeQueue({ projectRoot, bus, dryRun: true });
+    queue.start();
+
+    emitBranchPushed(
+      bus,
+      buildPayload({
+        commitSha: 'old-head',
+        itemIds: ['T4.4'],
+        pushedAt: '2026-05-17T10:00:00.000Z',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    await queue.drain();
+
+    emitBranchPushed(
+      bus,
+      buildPayload({
+        commitSha: 'new-head',
+        itemIds: ['T4.4', 'T4.5'],
+        pushedAt: '2026-05-17T10:05:00.000Z',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    await queue.drain();
+    queue.stop();
+
+    const entries = readLedger(projectRoot, 'cycle-abc') as Array<Record<string, unknown>>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!['headSha']).toBe('new-head');
+    expect(entries[0]!['updatedAt']).toBe('2026-05-17T10:05:00.000Z');
+    expect(entries[0]!['itemIds']).toEqual(['T4.4', 'T4.5']);
+  });
+
+  it('releases duplicate branch reservations when ledger event publishing throws', async () => {
+    makeCycleDir(projectRoot, 'cycle-abc');
+
+    const queue = new MergeQueue({ projectRoot, bus, dryRun: true });
+    const access = queue as unknown as {
+      handleEvent(payload: AgentBranchPushedPayload): Promise<void>;
+    };
+    const publishSpy = vi.spyOn(bus, 'publish').mockImplementationOnce(() => {
+      throw new Error('publish boom');
+    });
+
+    await expect(access.handleEvent(buildPayload())).rejects.toThrow('publish boom');
+    publishSpy.mockRestore();
+
+    await expect(withTimeout(
+      access.handleEvent(buildPayload({
+        commitSha: 'retry-head',
+        itemIds: ['T4.4', 'T4.5', 'T4.6'],
+        pushedAt: '2026-05-17T10:05:00.000Z',
+      })),
+      200,
+    )).resolves.toBeUndefined();
+
+    const entries = readLedger(projectRoot, 'cycle-abc') as Array<Record<string, unknown>>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!['headSha']).toBe('retry-head');
+    expect(entries[0]!['itemIds']).toEqual(['T4.4', 'T4.5', 'T4.6']);
   });
 
   // 11. stop() prevents future events from being processed

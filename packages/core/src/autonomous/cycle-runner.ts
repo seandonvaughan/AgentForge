@@ -413,6 +413,49 @@ function readAgentPrRecords(projectRoot: string, cycleId: string): AgentPrRecord
   }
 }
 
+function readExecuteRecoveryContext(projectRoot: string, cycleId: string): {
+  failedItemIds: string[];
+  blockedItemIds: string[];
+  timeoutItemIds: string[];
+} {
+  const path = join(projectRoot, '.agentforge', 'cycles', cycleId, 'phases', 'execute.json');
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { itemResults?: unknown };
+    const rows = Array.isArray(parsed.itemResults) ? parsed.itemResults : [];
+    const failedItemIds = new Set<string>();
+    const blockedItemIds = new Set<string>();
+    const timeoutItemIds = new Set<string>();
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      const r = row as {
+        itemId?: unknown;
+        status?: unknown;
+        failureClass?: unknown;
+        error?: unknown;
+      };
+      if (typeof r.itemId !== 'string' || r.itemId.length === 0) continue;
+      if (r.status === 'failed') failedItemIds.add(r.itemId);
+      if (r.status === 'blocked') blockedItemIds.add(r.itemId);
+      const error = typeof r.error === 'string' ? r.error.toLowerCase() : '';
+      if (
+        r.failureClass === 'timeout' ||
+        error.includes('timed out') ||
+        error.includes('timeout')
+      ) {
+        timeoutItemIds.add(r.itemId);
+        failedItemIds.add(r.itemId);
+      }
+    }
+    return {
+      failedItemIds: [...failedItemIds],
+      blockedItemIds: [...blockedItemIds],
+      timeoutItemIds: [...timeoutItemIds],
+    };
+  } catch {
+    return { failedItemIds: [], blockedItemIds: [], timeoutItemIds: [] };
+  }
+}
+
 function latestAgentPr(records: AgentPrRecord[]): AgentPrRecord | undefined {
   return [...records]
     .filter((record) => record.branch || record.prNumber || record.number)
@@ -426,6 +469,13 @@ export function buildGateRetryContext(
   attempt: number,
   rationale: string,
 ): GateRetryContext {
+  const executeRecovery = readExecuteRecoveryContext(projectRoot, cycleId);
+  const recoveryFields = {
+    ...(executeRecovery.failedItemIds.length > 0 ? { failedItemIds: executeRecovery.failedItemIds } : {}),
+    ...(executeRecovery.blockedItemIds.length > 0 ? { blockedItemIds: executeRecovery.blockedItemIds } : {}),
+    ...(executeRecovery.timeoutItemIds.length > 0 ? { timeoutItemIds: executeRecovery.timeoutItemIds } : {}),
+    ...(executeRecovery.timeoutItemIds.length > 0 ? { timeoutMs: 40 * 60 * 1000 } : {}),
+  };
   // P0.6 — epic-review fix-up routing. When the gate that rejected was the
   // structured epic review, it wrote phases/epic-review.json with the EXACT
   // faultedItems. Prefer that over the regex/PR-record extraction below so the
@@ -475,6 +525,7 @@ export function buildGateRetryContext(
           itemIds,
           files,
           findings,
+          ...recoveryFields,
         };
       }
     }
@@ -508,6 +559,7 @@ export function buildGateRetryContext(
     ...(itemIds !== undefined && itemIds.length > 0 ? { itemIds } : {}),
     files: extractMentionedFiles(rationale),
     findings: extractFindingLines(rationale),
+    ...recoveryFields,
   };
 }
 

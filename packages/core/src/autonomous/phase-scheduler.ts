@@ -77,8 +77,12 @@ export interface GateRetryContext {
   prNumber?: number;
   prUrl?: string;
   itemIds?: string[];
+  failedItemIds?: string[];
+  blockedItemIds?: string[];
+  timeoutItemIds?: string[];
   files?: string[];
   findings?: string[];
+  timeoutMs?: number;
 }
 
 export interface PhaseContext {
