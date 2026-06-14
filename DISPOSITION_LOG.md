@@ -1,4 +1,5 @@
 # CLI Commands Disposition Log
+- 2026-06-13: Codex-mode recovery canary exercised patched branch verification base evidence.
 
 **Date**: 2026-04-17  
 **Audit**: `src/cli/commands/*` vs `packages/cli/src/commands/*`  
