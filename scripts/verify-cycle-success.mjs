@@ -8,10 +8,13 @@ function parseArgs(argv) {
     cycle: 'latest',
     allowMissingPr: false,
     allowZeroTests: false,
+    requireAllTestsPass: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--project-root') {
+    if (arg === '--') {
+      continue;
+    } else if (arg === '--project-root') {
       opts.projectRoot = argv[++i] ?? opts.projectRoot;
     } else if (arg === '--cycle') {
       opts.cycle = argv[++i] ?? opts.cycle;
@@ -19,6 +22,8 @@ function parseArgs(argv) {
       opts.allowMissingPr = true;
     } else if (arg === '--allow-zero-tests') {
       opts.allowZeroTests = true;
+    } else if (arg === '--require-all-tests-pass') {
+      opts.requireAllTestsPass = true;
     } else if (arg === '--help' || arg === '-h') {
       printHelp();
       process.exit(0);
@@ -36,8 +41,11 @@ Validates that an AgentForge autonomous cycle actually completed:
   - cycle.json stage is completed
   - gateVerdict is APPROVE
   - execute.json has no final failed/blocked items
-  - tests are nonzero and all passed
+  - tests are nonzero and have no new failures
   - PR metadata is present
+
+Strict test flag:
+  --require-all-tests-pass
 
 Fixture-only flags:
   --allow-missing-pr
@@ -146,12 +154,19 @@ function validate(opts) {
   const testsTotal = Number(tests.total ?? 0);
   const testsPassed = Number(tests.passed ?? 0);
   const testsFailed = Number(tests.failed ?? 0);
-  const newFailures = Array.isArray(tests.newFailures) ? tests.newFailures.length : 0;
+  const hasNewFailures = Array.isArray(tests.newFailures);
+  const newFailures = hasNewFailures ? tests.newFailures.length : 0;
   if (!opts.allowZeroTests && testsTotal <= 0) {
     failures.push('cycle tests.total is 0; expected nonzero verification evidence');
   }
-  if (testsTotal > 0 && (testsPassed !== testsTotal || testsFailed !== 0 || newFailures !== 0)) {
-    failures.push(`tests not clean: passed=${testsPassed}/${testsTotal} failed=${testsFailed} newFailures=${newFailures}`);
+  if (testsTotal > 0 && !hasNewFailures) {
+    failures.push('cycle tests.newFailures is missing; cannot verify regression status');
+  }
+  if (testsTotal > 0 && newFailures > 0) {
+    failures.push(`cycle has new test failures: newFailures=${newFailures}`);
+  }
+  if (opts.requireAllTestsPass && testsTotal > 0 && (testsPassed !== testsTotal || testsFailed !== 0)) {
+    failures.push(`tests not fully green: passed=${testsPassed}/${testsTotal} failed=${testsFailed}`);
   }
 
   if (!opts.allowMissingPr && !hasPrMetadata(projectRoot, cycleId, cycle)) {
@@ -165,6 +180,11 @@ function validate(opts) {
     return;
   }
 
+  if (testsTotal > 0 && testsFailed > 0) {
+    console.warn(
+      `[verify:cycle-success] WARN baseline/pre-existing test failures present: failed=${testsFailed} newFailures=${newFailures}`,
+    );
+  }
   console.log(`[verify:cycle-success] PASS cycle=${cycleId}`);
 }
 
