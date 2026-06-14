@@ -59,6 +59,12 @@ function runVerifier(projectRoot: string) {
   });
 }
 
+function runVerifierWithArgs(projectRoot: string, args: string[]) {
+  return spawnSync(process.execPath, [RUNNER, ...args, '--project-root', projectRoot, '--cycle', 'cycle-a'], {
+    encoding: 'utf8',
+  });
+}
+
 describe('verify-cycle-success CLI', () => {
   let projectRoot: string;
 
@@ -71,6 +77,41 @@ describe('verify-cycle-success CLI', () => {
     writeFixture(projectRoot);
 
     const result = runVerifier(projectRoot);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('[verify:cycle-success] PASS cycle=cycle-a');
+  });
+
+  it('passes with baseline test failures when no new failures are recorded', () => {
+    projectRoot = makeTmpDir();
+    writeFixture(projectRoot, {
+      cycle: { tests: { total: 9206, passed: 9202, failed: 4, newFailures: [] } },
+    });
+
+    const result = runVerifier(projectRoot);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('[verify:cycle-success] PASS cycle=cycle-a');
+    expect(result.stderr).toContain('baseline/pre-existing test failures present: failed=4 newFailures=0');
+  });
+
+  it('rejects baseline failures in strict all-tests-pass mode', () => {
+    projectRoot = makeTmpDir();
+    writeFixture(projectRoot, {
+      cycle: { tests: { total: 9206, passed: 9202, failed: 4, newFailures: [] } },
+    });
+
+    const result = runVerifierWithArgs(projectRoot, ['--require-all-tests-pass']);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('tests not fully green: passed=9202/9206 failed=4');
+  });
+
+  it('accepts a literal -- separator before CLI args', () => {
+    projectRoot = makeTmpDir();
+    writeFixture(projectRoot);
+
+    const result = runVerifierWithArgs(projectRoot, ['--']);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('[verify:cycle-success] PASS cycle=cycle-a');
@@ -101,6 +142,16 @@ describe('verify-cycle-success CLI', () => {
       name: 'zero tests',
       fixture: { cycle: { tests: { total: 0, passed: 0, failed: 0, newFailures: [] } } },
       message: 'cycle tests.total is 0',
+    },
+    {
+      name: 'new test failures',
+      fixture: { cycle: { tests: { total: 2, passed: 1, failed: 1, newFailures: ['test-a'] } } },
+      message: 'cycle has new test failures: newFailures=1',
+    },
+    {
+      name: 'missing new failure classification',
+      fixture: { cycle: { tests: { total: 2, passed: 1, failed: 1 } } },
+      message: 'cycle tests.newFailures is missing',
     },
     {
       name: 'missing PR metadata',
